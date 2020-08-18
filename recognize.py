@@ -26,6 +26,7 @@ class Rec():
         self.slice_db = None
         self.default_scene_confidence = 15
         self.default_face_confidence = 0.45
+        self.detect_mode = 'cnn'
         if os.path.exists(self.workarea) == False:
             os.mkdir(self.workarea)
         
@@ -78,7 +79,7 @@ class Rec():
                     continue
             file = self.convert_pic_type(self.picture_path+file)
             image = fr.load_image_file(self.picture_path+file)
-            face_locations = fr.face_locations(image)
+            face_locations = fr.face_locations(image, model=self.detect_mode)
             #only handle one person frame
             if face_locations == []:
                 self.log.log("check_new_pic", "[%s] no face detected, not our goals" %(file))
@@ -176,6 +177,13 @@ class Rec():
         self.slice_db[slice_name] = slice_info
         self.save_slice_database()
         
+    def detect_face_percent(self, frame, video_width):
+        #(top, right, bottom, left)
+        face_locations = fr.face_locations(frame, model=self.detect_mode)
+        if len(face_locations) == 0:
+            return 0
+        return (face_locations[0][1] - face_locations[0][3]) / video_width
+        
     def sync_slice_info(self):
         self.init_slice_database()
         if os.path.exists(self.slice_path) == False:
@@ -210,7 +218,8 @@ class Rec():
                 self.slice_db[new_file_path]["fps"] = int(flow.get(cv2.CAP_PROP_FPS))
                 self.slice_db[new_file_path]["fourcc"] = int(flow.get(cv2.CAP_PROP_FOURCC))
                 self.slice_db[new_file_path]["express"] = express
-                self.slice_db[new_file_path]["face_percent"] = 100
+                ret, frame = flow.read()
+                self.slice_db[new_file_path]["face_percent"] = self.detect_face_percent(frame, self.slice_db[new_file_path]["width"])
                 flow.release()
                 if new_file_path != file_path:
                     os.rename(file_path, new_file_path)
@@ -402,13 +411,13 @@ class Rec():
                         break
                     #if the first frame matched, check the last frame
                     #(top, right, bottom, left)
-                    face_locations = fr.face_locations(frames[0])
+                    face_locations = fr.face_locations(frames[0], model=self.detect_mode)
                     face_match = self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num)
                     if face_match == True:
                         if mode == "fuzzy":
                             #check 1/2 of the batch until match
                             for i in range(len(frames) - 1, len(frames)//2 - 1, -1):
-                                face_locations = fr.face_locations(frames[i])
+                                face_locations = fr.face_locations(frames[i], model=self.detect_mode)
                                 if self.compare_face(frames[i], face_locations, info["width"], info["height"], face_hit_num) == True:
                                     success = True
                                     #if in different scene, drop the tail
@@ -416,9 +425,9 @@ class Rec():
                                         frames = frames[:i+1]
                                     break
                         elif mode == "fastest":
-                            face_locations = fr.face_locations(frames[-1])
+                            face_locations = fr.face_locations(frames[-1], model=self.detect_mode)
                             if self.compare_face(frames[-1], face_locations, info["width"], info["height"], face_hit_num) == True:
-                                face_locations = fr.face_locations(frames[len(frames)//2])
+                                face_locations = fr.face_locations(frames[len(frames)//2], model=self.detect_mode)
                                 if self.compare_face(frames[-1], face_locations, info["width"], info["height"], face_hit_num) == True:
                                     success = True
                     #this batch is matched
@@ -451,9 +460,9 @@ class Rec():
                 if info["length"]%batch_size != 0 and is_done == False:
                     frames = self.load_frame(flow, info["length"]%batch_size)
                     if frames != []:
-                        face_locations = fr.face_locations(frames[0])
+                        face_locations = fr.face_locations(frames[0], model=self.detect_mode)
                         if self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num) == True:
-                            face_locations = fr.face_locations(frames[-1])
+                            face_locations = fr.face_locations(frames[-1], model=self.detect_mode)
                             if self.compare_face(frames[-1], face_locations, info["width"], info["height"], face_hit_num) == True:
                                 final_frame = self.process_frame(frames)
                                 self.write_slice_video(final_frames, current_slice_flow)
@@ -500,7 +509,7 @@ class Rec():
                 for index in range(0, info["length"]//sample_rate):
                     frames = self.load_frame(flow, sample_rate)
                     #if the first frame matched, check the last frame
-                    face_locations = fr.face_locations(frames[0])
+                    face_locations = fr.face_locations(frames[0], model=self.detect_mode)
                     if self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num) == True:
                         final_frames = self.process_frame(frames)
                         #if the same scene
@@ -573,7 +582,7 @@ class Rec():
                     if frames == []:
                         break
                     #if the first frame matched, look ahead for same scene
-                    face_locations = fr.face_locations(frames[0])
+                    face_locations = fr.face_locations(frames[0], model=self.detect_mode)
                     if self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num) == True:
                         need_write = [frames[0]]
                         ahead_append_nums = 1

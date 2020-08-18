@@ -339,10 +339,12 @@ class Mov():
         if self.rec.slice_db == None:
             self.rec.init_slice_database()
         express_slices = []
+        face_size = commands["face-size"] / 100
         for slice, slice_info in self.rec.slice_db.items():
             if (slice_info["express"] == commands["express"] or commands["express"] == "default") and \
                 (commands["feature"] == "" or commands["feature"] in slice) and \
-                (slice_info["length"] > commands["slice-size"] * slice_info["fps"]):
+                (slice_info["length"] > commands["slice-size"] * slice_info["fps"]) and \
+                (slice_info["face_percent"] >= face_size):
                     express_slices.append([slice, slice_info])
         if express_slices == []:
             self.log.log("preprocess_slice", "no slices were picked")

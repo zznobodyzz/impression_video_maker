@@ -63,13 +63,6 @@ class Mus():
         i = 0
         length = len(beats) - 1
         while i < length:
-            if beats[i + 1] - beats[i] > selete_beat_avg * 2 * 0.8:
-                beats.insert(i + 1, beats[i] + selete_beat_avg)
-                length = len(beats) - 1
-            i += 1
-        i = 0
-        length = len(beats) - 1
-        while i < length:
             if beats[i + 1] - beats[i] < selete_beat_avg * 0.8:
                 beats.pop(i)
                 length = len(beats) - 1
@@ -77,6 +70,14 @@ class Mus():
                 i += 1
         if beats[-1] - beats[-2] < selete_beat_avg * 0.8:
             beats.pop(-1)
+        i = 0
+        length = len(beats) - 1
+        print(selete_beat_avg)
+        while i < length:
+            if (beats[i + 1] - beats[i] > selete_beat_avg * 2 * 0.9):
+                beats.insert(i + 1, beats[i] + selete_beat_avg)
+                length = len(beats) - 1
+            i += 1
         return beats, selete_beat_avg
         
     def check_data_diff(self, data_list):
@@ -183,6 +184,8 @@ class Mus():
         delta = []
         for i in range(len(beats)-1):
             delta.append(beats[i + 1] - beats[i])
+        print(delta)
+        print(beats)
         return beats, base_delta
         
     def get_music_duration(self, y, sr):
@@ -245,6 +248,8 @@ class Mus():
                 else:
                     self.mus_db[file]["style"] = "slow"
                 #if beats not enough, need fill to the end
+                #if self.mus_db[file]["beats"][-1] < self.mus_db[file]["duration"]:
+                    #self.mus_db[file]["beats"].append(self.mus_db[file]["duration"])
                 while self.mus_db[file]["beats"][-1] < self.mus_db[file]["duration"]:
                     self.mus_db[file]["beats"].append(self.mus_db[file]["beats"][-1] + self.mus_db[file]["beat_delta"])
                 #while self.mus_db[file]["beats"][0] > self.mus_db[file]["beat_delta"] * 5:

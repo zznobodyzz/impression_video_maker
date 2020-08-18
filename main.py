@@ -66,6 +66,7 @@ def print_help():
                 "\t                          [-beat-mode]  ---  generation will concern about the music beats\n" \
                 "\t                          [-beat-rate  <frequence of beat(fast if big)>]\n" \
                 "\t                          [-slice-size <slice_seconds>] --- only slice more than <slice-size> will picked\n" \
+                "\t                          [-face-size <face_size_percent>] --- only face bigger than <face-size> will picked\n" \
                 "\t                          [-lrc-id     <song-id>] --- use this id to get lrc and append lrc to the video\n" \
                 "\t                          [-caption-height <n-pixel>] --- cut the n pixel of the bottom\n" \
                 "\t--album-learn  ---    learn pictures for album making, must have an initialized express recognizer\n" \
@@ -114,6 +115,7 @@ def get_make_mv_random_commands():
     result["no-repeat"] = False
     result["lrc-id"] = ""
     result["caption-height"] = 0
+    result["face-size"] = 0
     expresses = ["normal","happy","blue"]
     express_num = len(expresses)
     for i in range(express_num):
@@ -175,7 +177,7 @@ def get_make_mv_commands(argvs, index, length):
     result = {"music":[], "time":0, "title":"for_aragaki", "opconf":None, \
                 "edconf":None, "express":"default", \
                 "beat-mode":False, "slice-size":0, "beat-rate":30, "all-mode":False, \
-                "no-repeat":False, "feature":"", "lrc-id":"", "caption-height":0}
+                "no-repeat":False, "feature":"", "lrc-id":"", "caption-height":0, "face-size":0}
     if index + 1 == length:
         log.log("get_make_mv_commands", "not enough parameters")
         return None
@@ -206,6 +208,8 @@ def get_make_mv_commands(argvs, index, length):
             result["beat-rate"] = get_argv(argvs, argvs.index("-beat-rate"), result["beat-rate"])
     if "-slice-size" in argvs:
         result["slice-size"] = get_argv(argvs, argvs.index("-slice-size"), result["slice-size"])
+    if "-face-size" in argvs:
+        result["face-size"] = get_argv(argvs, argvs.index("-face-size"), result["face-size"])
     if "-caption-height" in argvs:
         result["caption-height"] = get_argv(argvs, argvs.index("-caption-height"), result["caption-height"])
     return result
