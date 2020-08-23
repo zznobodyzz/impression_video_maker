@@ -155,7 +155,7 @@ class OPED_Painter():
             return None
         
     def generate_lrc_image(self, lrc, color, size, font):
-        bg = np.ones((size, len(lrc) * size, 3), dtype=np.uint8)
+        bg = np.ones((size+10, len(lrc) * size, 3), dtype=np.uint8)
         bg[:,:,:]=0
         return self.paint_text(bg, lrc, (0,0), color, size, font)
         
@@ -186,5 +186,32 @@ class OPED_Painter():
         end_pos = round((current_time - time)/0.8/cover_over_time * total_width)
         if end_pos > total_width:
             end_pos = total_width
-        return self.cover_lrc_image_to_bg(image, lrc_graph, pos, (pos[0] + end_pos, pos[1] + size))
-        
+        return self.cover_lrc_image_to_bg(image, lrc_graph, pos, (end_pos, pos[1] + size+10))
+    
+    def get_lrc_json(self, json_file):
+        file_path = self.material_path + json_file
+        if os.path.exists(file_path) == False:
+            self.log.log("get_lrc_json", "json file [%s] not found" %(json_file))
+            return None
+        with codecs.open(file_path, 'r', 'utf-8') as f:
+            try:
+                lrc_info = json.load(f)
+            except Exception as e:
+                self.log.log("get_lrc_json", "broken json file [%s]" %(json_file))
+                return None
+        if "id" not in lrc_info.keys():
+            self.log.log("get_lrc_json", "song id not specified")
+            return None
+        if "top" not in lrc_info.keys():
+            lrc_info["top"] = 20
+        if "left" not in lrc_info.keys():
+            lrc_info["left"] = 20
+        if "size" not in lrc_info.keys():
+            lrc_info["size"] = 30
+        if "font" not in lrc_info.keys():
+            lrc_info["font"] = "default.ttc"
+        if "color" not in lrc_info.keys():
+            lrc_info["color"] = (255,255,255)
+        else:
+            lrc_info["color"] = self.decode_color_string(lrc_info["color"])
+        return lrc_info

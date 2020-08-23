@@ -22,7 +22,7 @@ class Rec():
         #video_db {video name : {total_length, height, width, fps, fourcc, schedule}}
         self.video_db = None
         self.old_video_db = None
-        #slice_db {slice_name : {express, length, height, width, fps, fourcc}}
+        #slice_db {slice_path: {slice_name : {express, length, height, width, fps, fourcc}}}
         self.slice_db = None
         self.default_scene_confidence = 15
         self.default_face_confidence = 0.45
@@ -66,7 +66,7 @@ class Rec():
         for pic in self.pic_db:
             if pic[0] not in current_pics:
                 self.log.log("check_new_pic", "origin file [%s] not found, delete it from database" %(pic[0]))
-                self.pic_db.pop(pic)
+                self.pic_db.remove(pic)
         new_file = []
         for file in os.listdir(self.picture_path):
             if rescan == False:
@@ -115,7 +115,7 @@ class Rec():
                 self.log.log("init_video_database", "found video_db, going to use it")
         self.old_video_db = copy.deepcopy(self.video_db)
             
-    def init_slice_database(self):
+    def init_slice_database(self, path):
         if self.slice_db != None:
             return
         if os.path.exists(self.slice_database) == False:
@@ -128,8 +128,20 @@ class Rec():
                 self.slice_db = dict()
             else:
                 self.log.log("init_slice_database", "found slice_db, going to use it")
-        if os.path.exists(self.slice_path) == False:
-            os.mkdir(self.slice_path)
+        if path == '':
+            if os.path.exists(self.slice_path) == False:
+                os.mkdir(self.slice_path)
+                return
+        else:
+            slice_path = self.workarea + path
+            if slice_path[-1] != '/':
+                slice_path += '/'
+            if slice_path not in self.slice_db.keys():
+                self.slice_db[slice_path] = dict()
+            if os.path.exists(slice_path) == False:
+                self.log.log("init_slice_database", "slice_path specified not exists" %(slice_path))
+                os.mkdir(slice_path)
+            self.slice_path = slice_path
         
     def save_video_database(self):
         save_pkl(self.video_database, self.video_db)
@@ -166,37 +178,46 @@ class Rec():
             self.log.log("check_new_video", "successfully loaded %d videos" %(len(new_file)))
             self.log.log("check_new_video", "they are [" + " ".join(new_file) + "]")
     
-    def update_slice_db(self, slice_name, slice_info, operation = "add", predict = False):
-        self.init_slice_database()
+    def update_slice_db(self, slice_name, slice_info, path, operation = "add", predict = False):
+        self.init_slice_database(path)
         if operation == "del":
-            del self.slice_db[slice_name]
+            del self.slice_db[self.slice_path][slice_name]
             self.save_slice_database()
         if predict == True:
             flow = cv2.VideoCapture(slice_name)
             slice_info["express"] = self.recexp.predict_flow(flow, slice_info["length"])
-        self.slice_db[slice_name] = slice_info
+        self.slice_db[self.slice_path][slice_name] = slice_info
         self.save_slice_database()
         
-    def detect_face_percent(self, frame, video_width):
+    def detect_face_info(self, frame, video_width, tolerance):
         #(top, right, bottom, left)
         face_locations = fr.face_locations(frame, model=self.detect_mode)
         if len(face_locations) == 0:
-            return 0
-        return (face_locations[0][1] - face_locations[0][3]) / video_width
+            return 0,0,0
+        if len(face_locations) == 1:
+            #cv2.rectangle(frame, (face_locations[0][3], face_locations[0][0]), (face_locations[0][1], face_locations[0][2]), (0, 0, 255), 2)
+            #show_image("111", frame)
+            return face_locations[0][3], face_locations[0][1], (face_locations[0][1] - face_locations[0][3]) / video_width
+        index = 0
+        if len(face_locations) > 1:
+            return 0,0,0
+            self.init_picture_database()
+            face_hit_num = [0] * len(self.pic_db)
+            face_match, index = self.compare_face(frame, face_locations, frame.shape[1], frame.shape[0], face_hit_num, tolerance)
+            if face_match == False:
+                return 0,0,0
+        return face_locations[index][3], face_locations[index][1], (face_locations[index][1] - face_locations[index][3]) / video_width
         
-    def sync_slice_info(self):
-        self.init_slice_database()
-        if os.path.exists(self.slice_path) == False:
-            os.mkdir(self.slice_path)
-            return
+    def sync_slice_info(self, slice_path):
+        self.init_slice_database(slice_path)
         self.recexp.load_recognizer()
         current_slices = [(self.slice_path + current_slice) for current_slice in os.listdir(self.slice_path)]
-        for slice in list(self.slice_db):
+        for slice in list(self.slice_db[self.slice_path]):
             if slice not in current_slices:
                 self.log.log("sync_slice_info", "origin file [%s] not found, delete it from database" %(slice))
-                self.slice_db.pop(slice)
+                self.slice_db[self.slice_path].pop(slice)
         for file_path in current_slices:
-            if file_path not in self.slice_db.keys():
+            if file_path not in self.slice_db[self.slice_path].keys():
                 self.log.log("sync_slice_info", "new file found [%s]" %(file_path))
                 flow = cv2.VideoCapture(file_path)
                 '''
@@ -211,15 +232,19 @@ class Rec():
                 '''
                 new_file_path = file_path
                 express = "default"
-                self.slice_db[new_file_path] = dict()
-                self.slice_db[new_file_path]["length"] = int(flow.get(cv2.CAP_PROP_FRAME_COUNT))
-                self.slice_db[new_file_path]["width"] = int(flow.get(cv2.CAP_PROP_FRAME_WIDTH))
-                self.slice_db[new_file_path]["height"] = int(flow.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                self.slice_db[new_file_path]["fps"] = int(flow.get(cv2.CAP_PROP_FPS))
-                self.slice_db[new_file_path]["fourcc"] = int(flow.get(cv2.CAP_PROP_FOURCC))
-                self.slice_db[new_file_path]["express"] = express
+                self.slice_db[self.slice_path][new_file_path] = dict()
+                self.slice_db[self.slice_path][new_file_path]["length"] = int(flow.get(cv2.CAP_PROP_FRAME_COUNT))
+                self.slice_db[self.slice_path][new_file_path]["width"] = int(flow.get(cv2.CAP_PROP_FRAME_WIDTH))
+                self.slice_db[self.slice_path][new_file_path]["height"] = int(flow.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                self.slice_db[self.slice_path][new_file_path]["fps"] = int(flow.get(cv2.CAP_PROP_FPS))
+                self.slice_db[self.slice_path][new_file_path]["fourcc"] = int(flow.get(cv2.CAP_PROP_FOURCC))
+                self.slice_db[self.slice_path][new_file_path]["express"] = express
                 ret, frame = flow.read()
-                self.slice_db[new_file_path]["face_percent"] = self.detect_face_percent(frame, self.slice_db[new_file_path]["width"])
+                self.slice_db[self.slice_path][new_file_path]["face_location_left"], \
+                self.slice_db[self.slice_path][new_file_path]["face_location_right"], \
+                self.slice_db[self.slice_path][new_file_path]["face_percent"] = \
+                self.detect_face_info(frame, self.slice_db[self.slice_path][new_file_path]["width"])
+                #self.slice_db[self.slice_path][new_file_path]["face_percent"] = 100
                 flow.release()
                 if new_file_path != file_path:
                     os.rename(file_path, new_file_path)
@@ -244,13 +269,13 @@ class Rec():
         slice_file_name += '.avi'
         self.log.log("open_slice_video", "the current slice video is [%s]" %(slice_file_name))
         slice_flow = cv2.VideoWriter(slice_file_name, fourcc, origin_video_info["fps"], (origin_video_info["width"],origin_video_info["height"]))
-        self.slice_db[slice_file_name] = dict()
-        self.slice_db[slice_file_name]["length"] = 0
-        self.slice_db[slice_file_name]["width"] = origin_video_info["width"]
-        self.slice_db[slice_file_name]["height"] = origin_video_info["height"]
-        self.slice_db[slice_file_name]["fps"] = origin_video_info["fps"]
-        self.slice_db[slice_file_name]["fourcc"] = origin_video_info["fourcc"]
-        self.slice_db[slice_file_name]["face_percent"] = (face_location[3] - face_location[1])/origin_video_info["width"]
+        self.slice_db[self.slice_path][slice_file_name] = dict()
+        self.slice_db[self.slice_path][slice_file_name]["length"] = 0
+        self.slice_db[self.slice_path][slice_file_name]["width"] = origin_video_info["width"]
+        self.slice_db[self.slice_path][slice_file_name]["height"] = origin_video_info["height"]
+        self.slice_db[self.slice_path][slice_file_name]["fps"] = origin_video_info["fps"]
+        self.slice_db[self.slice_path][slice_file_name]["fourcc"] = origin_video_info["fourcc"]
+        self.slice_db[self.slice_path][slice_file_name]["face_percent"] = (face_location[3] - face_location[1])/origin_video_info["width"]
         return slice_flow, slice_file_name
         
     def close_slice_video(self, slice_flow, file_path):
@@ -258,9 +283,9 @@ class Rec():
             return
         slice_flow.release()
         slice_flow = cv2.VideoCapture(file_path)
-        self.slice_db[file_path]["length"] = int(slice_flow.get(cv2.CAP_PROP_FRAME_COUNT))
-        #self.slice_db[file_path]["express"] = self.recexp.predict_flow(slice_flow, self.slice_db[file_path]["length"])
-        self.slice_db[file_path]["express"] = "default"
+        self.slice_db[self.slice_path][file_path]["length"] = int(slice_flow.get(cv2.CAP_PROP_FRAME_COUNT))
+        #self.slice_db[self.slice_path][file_path]["express"] = self.recexp.predict_flow(slice_flow, self.slice_db[file_path]["length"])
+        self.slice_db[self.slice_path][file_path]["express"] = "default"
         slice_flow.release()
         self.save_slice_database()
         
@@ -287,21 +312,24 @@ class Rec():
             (face_locations[1] > width//5*4 and face_locations[3] < width//5):
             return False
         
-    def compare_face(self, frame, face_locations, width, height, face_hit_num):
+    def compare_face(self, frame, face_locations, width, height, face_hit_num, tolerance):
         #only handle one person frame
-        if len(face_locations) != 1:
-            return False
+        #if len(face_locations) != 1:
+            #return False
         face_encodings = fr.face_encodings(frame, face_locations)
-        for pic in self.pic_db:
-            match = fr.compare_faces(pic[1], face_encodings[0], tolerance=self.default_face_confidence)
-            if match[0] == True:
-                #if self.face_location_check(face_locations[0], width, height) == False:
-                    #return False
-                face_hit_num[self.pic_db.index(pic)] += 1
-                #frame = cv2.UMat().get()
-                #cv2.rectangle(frame, (face_locations[0][3], face_locations[0][0]), (face_locations[0][1], face_locations[0][2]), (0, 0, 255), 2)
-                return True
-        return False
+        for i in range(len(self.pic_db)):
+            pic = self.pic_db[i]
+            for j in range(len(face_encodings)):
+                match = fr.compare_faces(pic[1], face_encodings[j], tolerance=tolerance)
+                if match[0] == True:
+                    #if self.face_location_check(face_locations[0], width, height) == False:
+                        #return False
+                    face_hit_num[i] += 1
+                    #frame = cv2.UMat().get()
+                    #cv2.rectangle(frame, (face_locations[0][3], face_locations[0][0]), (face_locations[0][1], face_locations[0][2]), (0, 0, 255), 2)
+                    #3 -> left, 1 -> 
+                    return True, j
+        return False, 0
         
     def compare_scene(self, frame1, frame2, confidence):
         if len(frame1) == 0:
@@ -412,13 +440,14 @@ class Rec():
                     #if the first frame matched, check the last frame
                     #(top, right, bottom, left)
                     face_locations = fr.face_locations(frames[0], model=self.detect_mode)
-                    face_match = self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num)
+                    face_match, _ = self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num, self.default_face_confidence)
                     if face_match == True:
                         if mode == "fuzzy":
                             #check 1/2 of the batch until match
                             for i in range(len(frames) - 1, len(frames)//2 - 1, -1):
                                 face_locations = fr.face_locations(frames[i], model=self.detect_mode)
-                                if self.compare_face(frames[i], face_locations, info["width"], info["height"], face_hit_num) == True:
+                                face_match, _ = self.compare_face(frames[i], face_locations, info["width"], info["height"], face_hit_num, self.default_face_confidence)
+                                if face_match == True:
                                     success = True
                                     #if in different scene, drop the tail
                                     if ((i != len(frames) - 1) and (self.compare_scene(frames[i], frames[i+1], self.default_scene_confidence) == False)):
@@ -426,9 +455,11 @@ class Rec():
                                     break
                         elif mode == "fastest":
                             face_locations = fr.face_locations(frames[-1], model=self.detect_mode)
-                            if self.compare_face(frames[-1], face_locations, info["width"], info["height"], face_hit_num) == True:
+                            face_match, _ = self.compare_face(frames[-1], face_locations, info["width"], info["height"], face_hit_num, self.default_face_confidence)
+                            if face_match == True:
                                 face_locations = fr.face_locations(frames[len(frames)//2], model=self.detect_mode)
-                                if self.compare_face(frames[-1], face_locations, info["width"], info["height"], face_hit_num) == True:
+                                face_match, _ = self.compare_face(frames[-1], face_locations, info["width"], info["height"], face_hit_num, self.default_face_confidence)
+                                if face_match == True:
                                     success = True
                     #this batch is matched
                     if success == True:
@@ -461,9 +492,11 @@ class Rec():
                     frames = self.load_frame(flow, info["length"]%batch_size)
                     if frames != []:
                         face_locations = fr.face_locations(frames[0], model=self.detect_mode)
-                        if self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num) == True:
+                        face_match, _ = self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num, self.default_face_confidence)
+                        if face_match == True:
                             face_locations = fr.face_locations(frames[-1], model=self.detect_mode)
-                            if self.compare_face(frames[-1], face_locations, info["width"], info["height"], face_hit_num) == True:
+                            face_match, _ = self.compare_face(frames[-1], face_locations, info["width"], info["height"], face_hit_num, self.default_face_confidence)
+                            if face_match == True:
                                 final_frame = self.process_frame(frames)
                                 self.write_slice_video(final_frames, current_slice_flow)
                                 match_num += info["length"]%batch_size
@@ -510,7 +543,8 @@ class Rec():
                     frames = self.load_frame(flow, sample_rate)
                     #if the first frame matched, check the last frame
                     face_locations = fr.face_locations(frames[0], model=self.detect_mode)
-                    if self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num) == True:
+                    face_match, _ = self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num, self.default_face_confidence)
+                    if face_match == True:
                         final_frames = self.process_frame(frames)
                         #if the same scene
                         if (index - last_success_frame_index == 1) or \
@@ -550,7 +584,7 @@ class Rec():
                 self.get_job_result()
                 exit()
                 
-    def start_test_job(self, mode, sample_rate):
+    def start_scene_job(self, mode, sample_rate):
         current_slice_flow = None
         flow = None
         index = 0
@@ -562,14 +596,14 @@ class Rec():
                     continue
                 now_schedule = 0
                 last_schedule = 0
-                self.log.log("start_test_job", "start processing video [%s]" %(flow_file))
+                self.log.log("start_scene_job", "start processing video [%s]" %(flow_file))
                 total_time = self.trans_seconds_to_time(info["length"]//info["fps"])
                 write_frame_nums = 0
                 match_num = 0
                 flow = cv2.VideoCapture(flow_file)
                 if info["schedule"] != 0:
                     flow.set(cv2.CAP_PROP_POS_FRAMES, info["length"]*info["schedule"]//100)
-                    self.log.log("start_test_job", "continue with schedule %d\n" %(info["schedule"]))
+                    self.log.log("start_scene_job", "continue with schedule %d\n" %(info["schedule"]))
                     seconds = info["length"]*info["schedule"]//100//info["fps"]
                 else:
                     seconds = 0
@@ -583,7 +617,8 @@ class Rec():
                         break
                     #if the first frame matched, look ahead for same scene
                     face_locations = fr.face_locations(frames[0], model=self.detect_mode)
-                    if self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num) == True:
+                    face_match, _ = self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num, self.default_face_confidence)
+                    if face_match == True:
                         need_write = [frames[0]]
                         ahead_append_nums = 1
                         current_frame = frames[0]
@@ -636,7 +671,7 @@ class Rec():
                         seconds += 1
                     now_schedule = seconds*100//total_seconds
                     if now_schedule - last_schedule > 1:
-                        self.log.log("start_test_job", "schedule: %d%% [%s/%s]" %(now_schedule, self.trans_seconds_to_time(seconds), total_time))
+                        self.log.log("start_scene_job", "schedule: %d%% [%s/%s]" %(now_schedule, self.trans_seconds_to_time(seconds), total_time))
                         last_schedule = now_schedule
                         self.update_schedule(flow_file, now_schedule, match_num)
                         #every 5 percent reorder faces by match num, most likely face are moving to the front
@@ -659,7 +694,7 @@ class Rec():
         self.log.log("recognize_aragaki", "your commands are %s" %(str(commands)))
         self.init_picture_database()
         self.init_video_database()
-        self.init_slice_database()
+        self.init_slice_database(commands["slice-path"])
         self.check_new_video()
         self.save_video_database()
         self.recexp.load_recognizer()
@@ -667,38 +702,39 @@ class Rec():
             self.start_fuzzy_job(commands["mode"], commands["sample-rate"])
         elif commands["mode"] == "exact":
             self.start_exact_job(commands["mode"], commands["sample-rate"])
-        elif commands["mode"] == "test":
-            self.start_test_job(commands["mode"], commands["sample-rate"])
+        elif commands["mode"] == "scene":
+            self.start_scene_job(commands["mode"], commands["sample-rate"])
         self.get_job_result()
         self.save_video_database()
         self.save_slice_database()
         
-    def get_movie_slices_total_length(self):
-        self.init_slice_database()
+    def get_movie_slices_total_length(self, commands):
+        self.init_slice_database(commands["path"])
         total_length = 0
-        for info in self.slice_db.values():
+        for info in self.slice_db[self.slice_path].values():
             total_length += (info["length"]//info["fps"])
         return total_length
         
-    def get_movie_express_slices_length(self, express):
-        self.init_slice_database()
+    def get_movie_express_slices_length(self, express, commands):
+        self.init_slice_database(commands["path"])
         total_length = 0
         if express == "default":
             return self.get_movie_slices_total_length()
-        for info in self.slice_db.values():
+        for info in self.slice_db[self.slice_path].values():
             if info["express"] == express:
                 total_length += (info["length"]//info["fps"])
         return total_length
     
-    def get_movie_slice_base_info(self):
-        self.init_slice_database()
+    def get_movie_slice_base_info(self, path = ''):
+        self.init_slice_database(path)
         min_pixel = 3440*1920
         return_info = None
-        for info in self.slice_db.values():
-            current_pixel = info["width"] * info["height"]
-            if current_pixel < min_pixel:
-                min_pixel = current_pixel
-                return_info = info
+        for path in self.slice_db.keys():
+            for info in self.slice_db[path].values():
+                current_pixel = info["width"] * info["height"]
+                if current_pixel < min_pixel:
+                    min_pixel = current_pixel
+                    return_info = info
         return return_info
         
         

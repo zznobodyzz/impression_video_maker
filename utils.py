@@ -14,7 +14,7 @@ def get_argvs(argvs, index, default = []):
     result = []
     if index + 1 == len(argvs):
         return default
-    for i in range(index + 1, len(argvs) - 1):
+    for i in range(index + 1, len(argvs)):
         if argvs[i][0] == '-':
             break
         if argvs[i].isdigit() == True:

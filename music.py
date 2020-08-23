@@ -72,7 +72,6 @@ class Mus():
             beats.pop(-1)
         i = 0
         length = len(beats) - 1
-        print(selete_beat_avg)
         while i < length:
             if (beats[i + 1] - beats[i] > selete_beat_avg * 2 * 0.9):
                 beats.insert(i + 1, beats[i] + selete_beat_avg)
@@ -135,23 +134,7 @@ class Mus():
             i += 1
             length = len(delta_result)
         return beats, delta_result
-    
-    def combine_beats(self, beats, base_delta):
-        zip_times = 1
-        if base_delta < 1:
-            for i in [2,4,6]:
-                if i * base_delta > 1:
-                    zip_times = i
-                    break
-            i = 1
-            length = len(beats)
-            while i < len(beats):
-                for j in range(zip_times-1):
-                    beats.pop(i)
-                i += 1
-                length = len(beats)
-        return beats, base_delta*zip_times
-    
+
     def get_music_beats(self, y, sr):
         onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=512, aggregate=np.median)
         peaks = librosa.util.peak_pick(onset_env, 1, 1, 1, 1, 0.8, 5)
@@ -180,12 +163,9 @@ class Mus():
         beats, delta = self.combine_delta(beats, delta, delta[index:index+nums], index)
         counter = self.counter_delta_times(delta, 0.1)
         beats, base_delta = self.format_beats(beats, counter)
-        #beats, base_delta = self.combine_beats(beats, base_delta)
         delta = []
         for i in range(len(beats)-1):
             delta.append(beats[i + 1] - beats[i])
-        print(delta)
-        print(beats)
         return beats, base_delta
         
     def get_music_duration(self, y, sr):
@@ -231,12 +211,15 @@ class Mus():
                 self.mus_db.pop(mus)
         for file in os.listdir(self.music_path):
             if file not in self.mus_db.keys() or rescan == True:
+                self.log.log("check_new_mus", "processing music file [%s]" %(file))
                 if file in os.listdir(self.music_beat_path):
                     self.log.log("check_new_mus", "found beat file, using it for beat tracking")
                     beat_file = self.music_beat_path+file
+                    self.convert_mus_type(beat_file)
+                    file = self.convert_mus_type(self.music_path+file)
                 else:
-                    beat_file = self.convert_mus_type(self.music_path+file)
-                file = self.convert_mus_type(self.music_path+file)
+                    file = self.convert_mus_type(self.music_path+file)
+                    beat_file = self.music_path+file
                 self.mus_db[file] = dict()
                 y, sr = librosa.load(beat_file)
                 beats, beat_delta = self.get_music_beats(y, sr)

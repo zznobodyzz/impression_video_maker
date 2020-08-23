@@ -1,4 +1,3 @@
-'''
 from painter import OPED_Painter
 from log import Log
 import numpy as np
@@ -6,6 +5,9 @@ import cv2
 import datetime
 import sys
 import requests
+import librosa
+import numpy as np
+'''
 p = OPED_Painter("./wa/", "./wa/output_movie/", "./wa/material/", "./wa/material/font/", "[255,255,255]", \
                             "[0,0,0]", 6, 4, Log())
 
@@ -43,9 +45,7 @@ for i in range(1000):
 output.release()
 print("end:  " + datetime.datetime.strftime(datetime.datetime.now(),'%Y-%m-%d %H:%M:%S'))
 
-'''
-import librosa
-import numpy as np
+
 
 y, sr = librosa.load('hikoten.mp3')
 # get onset envelope
@@ -75,3 +75,18 @@ print('Downbeat frames: {}'.format(downbeat_frames))
 # print times
 downbeat_times = librosa.frames_to_time(downbeat_frames, sr=sr)
 print('Downbeat times in s: {}'.format(downbeat_times))
+'''
+
+image = cv2.imread("../image/flower4.jpg")
+cv2.imshow("origin", image)
+cv2.waitKey(0)
+
+for alpha in np.arange(0, 1.1, 0.1)[::-1]:
+    overlay = image.copy()
+    output = image.copy()
+    for h in range(output.shape[0]):
+        for w in range(output.shape[1]):
+            for c in range(output.shape[2]):
+                output[h][w][c] = (overlay[h][w][c] * alpha) + (output[h][w][c] * (1.0 - alpha))
+
+cv2.destroyAllWindows()

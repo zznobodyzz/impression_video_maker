@@ -1,5 +1,6 @@
 import sys
 from log import Log
+import numpy as np
 from utils import *
 from recognize import Rec
 from rec_express import RecExp
@@ -28,7 +29,7 @@ def print_help():
                 "\t                          [-rescan]    ---   rebuild database\n"
                 "\t--recognize    ---    generate video slices\n" \
                 "\t                      the params are as follows:\n" \
-                "\t                          [-mode <fuzzy|fastest|full|test>]\n" \
+                "\t                          [-mode <fuzzy|fastest|full|scene>]\n" \
                 "\t                          [-sample-rate <num_of_seconds>]   ---  for fuzzy/fastest mode it means process each n seconds, for full mode it means process each n frames\n" \
                 "\t--listen       ---    load mp3 music for generate mv and album\n" \
                 "\t                      the params are as follows:\n" \
@@ -64,11 +65,13 @@ def print_help():
                 "\t                          [-no-repeat]  --- do not allow same slice appeared several times\n" \
                 "\t                          [-express  <normal|happy|blue|default>]\n" \
                 "\t                          [-beat-mode]  ---  generation will concern about the music beats\n" \
-                "\t                          [-beat-rate  <frequence of beat(fast if big)>]\n" \
+                "\t                          [-beat-rate  <frequence of beat(fast if small)>]\n" \
                 "\t                          [-slice-size <slice_seconds>] --- only slice more than <slice-size> will picked\n" \
                 "\t                          [-face-size <face_size_percent>] --- only face bigger than <face-size> will picked\n" \
                 "\t                          [-lrc-id     <song-id>] --- use this id to get lrc and append lrc to the video\n" \
                 "\t                          [-caption-height <n-pixel>] --- cut the n pixel of the bottom\n" \
+                "\t                          [-multi-mode <follow|nofollow>] --- will pick up slices from multi folder, and the whole mv will split to multi parts in width\n" \
+                "\t                          [-path <folder1> <folder2>...] --- will pick up slices from multi folder, and the whole mv will split to multi parts in width\n" \
                 "\t--album-learn  ---    learn pictures for album making, must have an initialized express recognizer\n" \
                 "\t                      the params are as follows:\n" \
                 "\t                          [-folder <picture_path>]\n" \
@@ -113,9 +116,11 @@ def get_make_mv_random_commands():
     result["beat-mode"] = False
     result["all-mode"] = False
     result["no-repeat"] = False
-    result["lrc-id"] = ""
+    result["lrc"] = None
     result["caption-height"] = 0
     result["face-size"] = 0
+    result["multi-mode"] = "nofollow"
+    result["path"] = []
     expresses = ["normal","happy","blue"]
     express_num = len(expresses)
     for i in range(express_num):
@@ -176,8 +181,9 @@ def get_make_mv_commands(argvs, index, length):
     #default values
     result = {"music":[], "time":0, "title":"for_aragaki", "opconf":None, \
                 "edconf":None, "express":"default", \
-                "beat-mode":False, "slice-size":0, "beat-rate":30, "all-mode":False, \
-                "no-repeat":False, "feature":"", "lrc-id":"", "caption-height":0, "face-size":0}
+                "beat-mode":False, "slice-size":0, "beat-rate":2, "all-mode":False, \
+                "no-repeat":False, "feature":"", "lrc":None, "caption-height":0, "face-size":0, \
+                "multi-mode":"nofollow", "path":[]}
     if index + 1 == length:
         log.log("get_make_mv_commands", "not enough parameters")
         return None
@@ -200,8 +206,8 @@ def get_make_mv_commands(argvs, index, length):
         result["edconf"] = get_argv(argvs, argvs.index("-edconf"), result["edconf"])
     if "-express" in argvs:
         result["express"] = get_argv(argvs, argvs.index("-express"), result["express"])
-    if "-lrc-id" in argvs:
-        result["lrc-id"] = get_argvstr(argvs, argvs.index("-lrc-id"), result["lrc-id"])
+    if "-lrc" in argvs:
+        result["lrc"] = get_argvstr(argvs, argvs.index("-lrc"), result["lrc"])
     if "-beat-mode" in argvs:
         result["beat-mode"] = True
         if "-beat-rate" in argvs:
@@ -212,6 +218,10 @@ def get_make_mv_commands(argvs, index, length):
         result["face-size"] = get_argv(argvs, argvs.index("-face-size"), result["face-size"])
     if "-caption-height" in argvs:
         result["caption-height"] = get_argv(argvs, argvs.index("-caption-height"), result["caption-height"])
+    if "-multi-mode" in argvs:
+        result["multi-mode"] = get_argv(argvs, argvs.index("-multi-mode"), result["multi-mode"])
+        if "-path" in argvs:
+            result["path"] = get_argvs(argvs, argvs.index("-path"), result["path"])
     return result
     
 def get_make_album_commands(argvs, index, length):
@@ -219,7 +229,7 @@ def get_make_album_commands(argvs, index, length):
     result = {"music":None, "pic-num":0, "title":"for_aragaki", "opconf":None, \
                 "edconf":None, "express":"default", \
                 "allow-repeat":False, "interval":5, "bggr":None, "bgco":"[255,255,255]", \
-                "beat-mode":False, "time":0, "beat-rate":60, "trans-mode":"random"}
+                "beat-mode":False, "time":0, "beat-rate":4, "trans-mode":"random"}
     if index + 1 == length:
         log.log("get_make_album_commands", "not enough parameters")
         return None
@@ -256,11 +266,13 @@ def get_make_album_commands(argvs, index, length):
     
 def get_recognize_commands(argvs, index, length):
     #default values
-    result = {"mode":"fastest", "sample-rate":1}
+    result = {"mode":"fastest", "sample-rate":1, "slice-path":''}
     if index + 1 == length:
         log.log("get_recognize_commands", "not enough parameters")
         return None
     argvs = argvs[index + 1:]
+    if "-slice-path" in argvs:
+        result["slice-path"] = get_argv(argvs, argvs.index("-slice-path"), result["slice-path"])
     if "-mode" in argvs:
         result["mode"] = get_argv(argvs, argvs.index("-mode"), result["mode"])
     if "-sample-rate" in argvs:
@@ -320,9 +332,11 @@ def execute_album_learn_commands(argvs):
 def execute_slice_pocess_commands(argvs):
     result = {"feature":"", "express":"default", \
                 "top-cut":0, "bottom-cut":0, "left-cut":0, "right-cut":0, "slow-times":0, \
-                "slice-size-range":"0-255"}
+                "slice-size-range":"0-255","path":''}
+    if '-path' in argvs:
+        result["path"] = get_argv(argvs, argvs.index("-path"), result["path"])
     if "-rescan" in argvs:
-        rec.sync_slice_info()
+        rec.sync_slice_info(result["path"])
         exit()
     if "-feature" in argvs:
         result["feature"] = get_argv(argvs, argvs.index("-feature"), result["feature"])
@@ -334,8 +348,8 @@ def execute_slice_pocess_commands(argvs):
         mov.cut_scene(result)
     elif "-get-slice-length" in argvs:
         express = get_argv(argvs, argvs.index("-get-slice-length"), "default")
-        length = rec.get_movie_express_slices_length(express)
-        log.log("get-slice-length", "express [%s] total length is %d" %(express, length))
+        length = rec.get_movie_express_slices_length(express, result)
+        log.log("get-slice-length", "express [%s] total length is %d seconds" %(express, length))
     elif "-slow-slice" in argvs:
         if "-slow-times" in argvs:
             result["slow-times"] = get_argv(argvs, argvs.index("-slow-times"), result["slow-times"])
@@ -381,24 +395,52 @@ def execute_make_album_commands(argvs):
     exit()
     
 def execute_test_commands(argvs):
-    if "-test-json" in argvs:
-        file_name = get_argv(argvs, argvs.index("-test-json"), None)
-        if "-width" in argvs:
-            width = get_argv(argvs, argvs.index("-width"), 1024)
-        if "-height" in argvs:
-            height = get_argv(argvs, argvs.index("-height"), 768)
+    width = 1024
+    height = 768
+    if "-width" in argvs:
+        width = get_argv(argvs, argvs.index("-width"), 1024)
+    if "-height" in argvs:
+        height = get_argv(argvs, argvs.index("-height"), 768)
+    if "-test-oped" in argvs:
+        file_name = get_argv(argvs, argvs.index("-test-oped"), None)
         if file_name == None:
             exit()
         painter = OPED_Painter("./wa/", "./wa/output_movie/", "./wa/material/", "./wa/material/font/", "[255,255,255]", \
                         "[0,0,0]", 6, 4, log)
         graph = painter.generate_image(file_name, width, height)
         if graph != []:
-            import cv2
-            cv2.imshow("test-json", graph)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
+            show_image("test-oped", graph)
         exit()
-    
+    if "-test-lrc" in argvs:
+        file_name = get_argv(argvs, argvs.index("-test-lrc"), None)
+        if file_name == None:
+            exit()
+        painter = OPED_Painter("./wa/", "./wa/output_movie/", "./wa/material/", "./wa/material/font/", "[255,255,255]", \
+                        "[0,0,0]", 6, 4, log)
+        lrc_info = painter.get_lrc_json(file_name)
+        if lrc_info == None:
+            exit()
+        lrc_origin = painter.get_lrc(lrc_info["id"])
+        lrcs = lrc_origin["lyric"].split('\n')
+        time_list = []
+        lrc_list = []
+        for lrc in lrcs:
+            try:
+                t = lrc[1:lrc.index(']')]
+                m = int(t.split(':')[0])
+                s = float(t.split(':')[1])
+                time_list.append(m*60 + s)
+                lrc_list.append(lrc[lrc.index(']')+1:])
+            except Exception as e:
+                continue
+        for i in range(600, 630, 2):
+            bg = np.ones((height, width, 3), dtype=np.uint8)
+            #rgb type
+            bg[:,:,:] = 0
+            out = painter.paint_lrc(time_list, lrc_list, bg, i/30, (lrc_info["top"], lrc_info["left"]), lrc_info["color"], lrc_info["size"], lrc_info["font"])
+            show_image("test-lrc", out)
+        exit()
+        
 def execute_commands(argvs):
     #prepare
     if len(argvs) == 0 or "--help" in argvs:
