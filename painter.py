@@ -8,6 +8,7 @@ import json
 import numpy as np
 import codecs
 import requests
+import face_recognition as fr
 
 class OPED_Painter():
     def __init__(self, workarea, output_movie_path, material_path, \
@@ -22,6 +23,7 @@ class OPED_Painter():
         self.default_wdco = default_wdco
         self.default_bgco = default_bgco
         self.log = log
+        self.last_location = None
         
     def paint_text(self, image, text, pos, text_rgb, size, font):
         font_obj = ImageFont.truetype(font, size)
@@ -215,3 +217,32 @@ class OPED_Painter():
         else:
             lrc_info["color"] = self.decode_color_string(lrc_info["color"])
         return lrc_info
+        
+    def paint_ghost(self, index, frame):
+        if index > 9:
+            self.last_location = None
+            return frame
+        face_locations = fr.face_locations(frame[:,:,::-1], model = "cnn")
+        if len(face_locations) == 0:
+            if self.last_location == None:
+                return frame
+            top, right, bottom, left = self.last_location
+        else:
+            top, right, bottom, left = face_locations[0]
+        alpha = 0.5 - (index + 1) * 0.05
+        overlay = frame.copy()
+        times = (1.05 + (1 - alpha) * 0.3)
+        resize_width = int(frame.shape[1] * times)
+        resize_height = int(frame.shape[0] * times)
+        center = (int((bottom - top) / 2 + top), int((right - left) / 2 + left))
+        recenter = (int(center[0] * times), int(center[1] * times))
+        overlay = cv2.resize(overlay, (resize_width, resize_height))
+        move_height = int((recenter[0] - center[0])/2)
+        move_width = int((recenter[1] - center[1])/2)
+        overlay = overlay[move_height:resize_height - move_height, move_width:resize_width-move_width,:]
+        overlay = cv2.resize(overlay, (frame.shape[1], frame.shape[0]))
+        output = frame * (1.0 - alpha) + overlay * alpha
+        output = output.astype(np.uint8)
+        self.last_location = (top, right, bottom, left)
+        return output
+        
