@@ -4,6 +4,9 @@ import numpy as np
 import os
 import copy
 from utils import *
+import pygame
+import time
+
 
 class Mus():
     def __init__(self, log):
@@ -15,6 +18,7 @@ class Mus():
         #{music_name : {beats, beat_delta, duration}}
         self.mus_db = None
         self.beat_speed = 30
+        self.beat_detect_mode = "auto"
     
     def counter_delta_times(self, delta, limit):
         counter = dict()
@@ -63,17 +67,17 @@ class Mus():
         i = 0
         length = len(beats) - 1
         while i < length:
-            if beats[i + 1] - beats[i] < selete_beat_avg * 0.8:
+            if beats[i + 1] - beats[i] < selete_beat_avg * 0.9:
                 beats.pop(i)
                 length = len(beats) - 1
             else:
                 i += 1
-        if beats[-1] - beats[-2] < selete_beat_avg * 0.8:
+        if beats[-1] - beats[-2] < selete_beat_avg * 0.9:
             beats.pop(-1)
         i = 0
         length = len(beats) - 1
         while i < length:
-            if (beats[i + 1] - beats[i] > selete_beat_avg * 2 * 0.9):
+            if (beats[i + 1] - beats[i] > selete_beat_avg * 2 * 0.8):
                 beats.insert(i + 1, beats[i] + selete_beat_avg)
                 length = len(beats) - 1
             i += 1
@@ -134,7 +138,7 @@ class Mus():
             i += 1
             length = len(delta_result)
         return beats, delta_result
-
+        
     def get_music_beats(self, y, sr):
         onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=512, aggregate=np.median)
         peaks = librosa.util.peak_pick(onset_env, 1, 1, 1, 1, 0.8, 5)
@@ -166,6 +170,7 @@ class Mus():
         delta = []
         for i in range(len(beats)-1):
             delta.append(beats[i + 1] - beats[i])
+        print(delta)
         return beats, base_delta
         
     def get_music_duration(self, y, sr):
@@ -198,6 +203,37 @@ class Mus():
         else:
             return file_path.split('/')[-1]
         
+    def generate_music_beats(self, file):
+        pygame.mixer.init()
+        print(file)
+        pygame.mixer.music.load(file)
+        pygame.mixer.music.set_volume(0.7)
+        print("press enter to record beats while playing music")
+        print("press r and enter to restart playing music")
+        print("warning: need to set focus to python command window after starting playing music")
+        time.sleep(2)
+        print("3")
+        time.sleep(1)
+        print("2")
+        time.sleep(1)
+        print("1")
+        time.sleep(1)
+        #must set mode, otherwise music will not start
+        pygame.display.set_mode([100,100])
+        pygame.mixer.music.play()
+        oldtime = time.time()
+        beats = []
+        while pygame.mixer.music.get_busy():
+            a = input()
+            nowtime = time.time()
+            print(nowtime - oldtime)
+            beats.append(nowtime - oldtime)
+            if a == 'r':
+                pygame.mixer.music.rewind()
+                beats = []
+                oldtime = time.time()
+        return beats, sum(beats)/len(beats)
+        
     def check_new_mus(self, rescan):
         if os.path.exists(self.music_path) == False:
             os.mkdir(self.music_path)
@@ -212,31 +248,29 @@ class Mus():
         for file in os.listdir(self.music_path):
             if file not in self.mus_db.keys() or rescan == True:
                 self.log.log("check_new_mus", "processing music file [%s]" %(file))
-                if file in os.listdir(self.music_beat_path):
-                    self.log.log("check_new_mus", "found beat file, using it for beat tracking")
-                    beat_file = self.music_beat_path+file
-                    self.convert_mus_type(beat_file)
-                    file = self.convert_mus_type(self.music_path+file)
-                else:
-                    file = self.convert_mus_type(self.music_path+file)
-                    beat_file = self.music_path+file
+                file = self.convert_mus_type(self.music_path+file)
                 self.mus_db[file] = dict()
-                y, sr = librosa.load(beat_file)
-                beats, beat_delta = self.get_music_beats(y, sr)
-                self.mus_db[file]["beat_delta"] = beat_delta
-                self.mus_db[file]["duration"] = self.get_music_duration(y, sr)
-                self.mus_db[file]["beats"] = copy.deepcopy(beats)
+                if self.beat_detect_mode == "auto":
+                    if file in os.listdir(self.music_beat_path):
+                        self.log.log("check_new_mus", "found beat file, using it for beat tracking")
+                        beat_file = self.music_beat_path+file
+                        self.convert_mus_type(beat_file)
+                    else:
+                        beat_file = self.music_path+file
+                    y, sr = librosa.load(self.music_path+file)
+                    self.mus_db[file]["duration"] = self.get_music_duration(y, sr)
+                    self.mus_db[file]["beats"], self.mus_db[file]["beat_delta"] = self.get_music_beats(y, sr)
+                    #if beats not enough, need fill to the end
+                else:
+                    y, sr = librosa.load(self.music_path+file)
+                    self.mus_db[file]["duration"] = self.get_music_duration(y, sr)
+                    self.mus_db[file]["beats"], self.mus_db[file]["beat_delta"] = self.generate_music_beats(self.music_path + file)
+                while self.mus_db[file]["beats"][-1] < self.mus_db[file]["duration"]:
+                    self.mus_db[file]["beats"].append(self.mus_db[file]["beats"][-1] + self.mus_db[file]["beat_delta"])
                 if self.mus_db[file]["beat_delta"] < 1:
                     self.mus_db[file]["style"] = "fast"
                 else:
                     self.mus_db[file]["style"] = "slow"
-                #if beats not enough, need fill to the end
-                #if self.mus_db[file]["beats"][-1] < self.mus_db[file]["duration"]:
-                    #self.mus_db[file]["beats"].append(self.mus_db[file]["duration"])
-                while self.mus_db[file]["beats"][-1] < self.mus_db[file]["duration"]:
-                    self.mus_db[file]["beats"].append(self.mus_db[file]["beats"][-1] + self.mus_db[file]["beat_delta"])
-                #while self.mus_db[file]["beats"][0] > self.mus_db[file]["beat_delta"] * 5:
-                    #self.mus_db[file]["beats"].insert(0, self.mus_db[file]["beats"][0] - self.mus_db[file]["beat_delta"])
                 new_file.append(file)
         if new_file != []:
             self.log.log("check_new_mus", "successfully loaded %d songs" %(len(new_file)))

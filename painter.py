@@ -218,9 +218,25 @@ class OPED_Painter():
             lrc_info["color"] = self.decode_color_string(lrc_info["color"])
         return lrc_info
         
-    def paint_ghost(self, index, frame):
-        if index > 9:
-            self.last_location = None
+    def paint_ghost(self, index, max_index, frame, fps):
+        #use half seconds
+        length = fps/2
+        if max_index < length:
+            return frame
+        if max_index > fps:
+            #start from half max index
+            if (index >= (max_index/2)) and (index < (max_index/2+length)):
+                index -= max_index/2
+            else:
+                self.last_location = None
+                return frame
+        else:
+            #start frome begining
+            if index > fps/2-1:
+                self.last_location = None
+                return frame
+        alpha = 0.7 - index * (0.7/(length))
+        if alpha < 0:
             return frame
         face_locations = fr.face_locations(frame[:,:,::-1], model = "cnn")
         if len(face_locations) == 0:
@@ -229,9 +245,8 @@ class OPED_Painter():
             top, right, bottom, left = self.last_location
         else:
             top, right, bottom, left = face_locations[0]
-        alpha = 0.5 - (index + 1) * 0.05
         overlay = frame.copy()
-        times = (1.05 + (1 - alpha) * 0.3)
+        times = (1.05 + (1 - alpha) * 0.4)
         resize_width = int(frame.shape[1] * times)
         resize_height = int(frame.shape[0] * times)
         center = (int((bottom - top) / 2 + top), int((right - left) / 2 + left))
@@ -242,6 +257,13 @@ class OPED_Painter():
         overlay = overlay[move_height:resize_height - move_height, move_width:resize_width-move_width,:]
         overlay = cv2.resize(overlay, (frame.shape[1], frame.shape[0]))
         output = frame * (1.0 - alpha) + overlay * alpha
+        for i in range(10,0,-1):
+            alpha_tmp = alpha/i
+            top_tmp = int(top/i)
+            bottom_tmp = int(frame.shape[0] - (frame.shape[0] - bottom) / i)
+            left_tmp = int(left/i)
+            right_tmp = int(frame.shape[1] - (frame.shape[1] - right) / i)
+            frame[top_tmp:bottom_tmp,left_tmp:right_tmp,:] = frame[top_tmp:bottom_tmp,left_tmp:right_tmp,:] * (1.0 - alpha_tmp) + overlay[top_tmp:bottom_tmp,left_tmp:right_tmp,:] * alpha_tmp
         output = output.astype(np.uint8)
         self.last_location = (top, right, bottom, left)
         return output

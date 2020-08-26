@@ -33,7 +33,8 @@ def print_help():
                 "\t                          [-sample-rate <num_of_seconds>]   ---  for fuzzy/fastest mode it means process each n seconds, for full mode it means process each n frames\n" \
                 "\t--listen       ---    load mp3 music for generate mv and album\n" \
                 "\t                      the params are as follows:\n" \
-                "\t                          [-rescan]    ---   rebuild database\n"
+                "\t                          [-rescan]    ---   rebuild database\n" \
+                "\t                          [-manual-beat] ---   you want to set beat manually\n"
                 "\t--train-exp    ---    train express recognition by given dataset\n" \
                 "\t                      the params are as follows:\n" \
                 "\t                          [-train-help]    --- a helping tool to help you build your own dataset for express recognition\n" \
@@ -306,6 +307,8 @@ def execute_listen_commands(argvs):
     if '-beat-speed' in argvs:
         beat_speed = get_argv(argvs, argvs.index("-beat-speed"), 30)
         mus.beat_speed = beat_speed
+    if '-manual-beat' in argvs:
+        mus.beat_detect_mode = "manual"
     rescan = True if "-rescan" in argvs else False
     mus.find_music(rescan)
     exit()

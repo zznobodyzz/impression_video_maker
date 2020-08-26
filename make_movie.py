@@ -28,7 +28,9 @@ class Mov():
                                     self.opening_seconds, self.ending_seconds, self.log)
         self.all_mode = False
         self.no_repeat = True
-        self.combine_mode = "nofollow"
+        self.combine_mode = "follow"
+        self.effect_list = ["ghost"]
+        self.effect = "None"
         
     def get_music(self, song_names):
         selected_music_file = []
@@ -96,9 +98,7 @@ class Mov():
             select_beats.append(beats[i])
         return select_beats
         
-    def write_frame_to_flow(self, flow, frame, width, height):
-        if frame.shape[0] != height or frame.shape[1] != width:
-            frame = cv2.resize(frame, (width, height))
+    def write_frame_to_flow(self, flow, frame):
         flow.write(frame)
         
     def calc_compensation(self, beats, fps, precise):
@@ -201,7 +201,7 @@ class Mov():
                     start_width = last_start_width
         return start_width
         
-    def generate_frame(self, slice_flow_list, slice_info_list, width, last_start_width_list, last_pos_list, caption_height, step):
+    def generate_frame(self, beat_frame_nums, slice_flow_list, slice_info_list, last_start_width_list, last_pos_list, caption_height, step, video_size):
         if len(slice_flow_list) == 1:
             slice_flow = slice_flow_list[0]
             slice_info = slice_info_list[0]
@@ -213,12 +213,15 @@ class Mov():
             if ret == False:
                 return [], 0
             if caption_height != 0:
-                frame = frame[:frame.shape[0]-caption_height,:,:]
+                frame = frame[:int(frame.shape[0] * (1 - caption_height/100)),:,:]
+            frame = cv2.resize(frame, video_size)
+            if self.effect == "ghost":
+                frame = self.painter.paint_ghost(step, beat_frame_nums, frame, self.default_output_fps)
             return frame, 0
         else:
             frame_list = []
-            slice_width_list = [width//len(slice_flow_list)]*len(slice_flow_list)
-            slice_width_list[-1] += width%len(slice_flow_list)
+            slice_width_list = [video_size[0]//len(slice_flow_list)]*len(slice_flow_list)
+            slice_width_list[-1] += video_size[0]%len(slice_flow_list)
             for i in range(len(slice_flow_list)):
                 slice_flow = slice_flow_list[i]
                 slice_width = slice_width_list[i]
@@ -232,6 +235,9 @@ class Mov():
                 ret, frame = slice_flow.read()
                 if ret == False:
                     return [], i
+                if caption_height != 0:
+                    frame = frame[:int(frame.shape[0] * (1 - caption_height/100)),:,:]
+                frame = cv2.resize(frame, video_size)
                 if self.combine_mode == "follow":
                     left, right, _ = self.rec.detect_face_info(frame, slice_info["width"], 0.1)
                     #follow face mode
@@ -251,12 +257,12 @@ class Mov():
                         start_width = last_start_width
                     last_start_width_list[i] = start_width
                 frame = frame[:,start_width:start_width+slice_width,:]
+                if self.effect == "ghost":
+                    frame = self.painter.paint_ghost(step, beat_frame_nums, frame, self.default_output_fps)
                 frame_list.append(frame)
             for i in range(1, len(frame_list)):
                 frame_list[0] = np.append(frame_list[0], frame_list[i], axis=1)
-            if caption_height != 0:
-                frame = frame_list[0][:frame_list[0].shape[0]-caption_height,:,:]
-            return frame, 0
+            return frame_list[0], 0
     
     def prepare_beat_slice_flow(self, slices_list, beat_frame_nums, beat_time, already_choosen):
         if len(slices_list) == 1:
@@ -295,27 +301,32 @@ class Mov():
         already_choosen = []
         base_slice_info = self.rec.get_movie_slice_base_info()
         writed_frames = 0
-        real_height = base_slice_info["height"] - caption_height
+        real_height = int(base_slice_info["height"] * (1 - caption_height/100))
+        #don't know why but necessary
         for i in range(len(beats)):
-            beats[i] -= 0.2
+            beats[i] -= 0.25
+        beats[0] = 0
         output_flow = cv2.VideoWriter(output_file_name, self.default_output_fourcc, self.default_output_fps, (base_slice_info["width"],real_height))
         time_up = False
         total_length = self.default_output_fps * time
         need_write_ahead = False
         compensation = self.calc_compensation(beats, self.default_output_fps, 5)
-        slices_list_ori = copy.deepcopy(slices_list)
+        slice_list_ori = slices_list.copy()
         for i in range(len(beats) - 1):
-            if (i < 31) or (i > 47 and i < 83):
-                slices_list = [slices_list_ori[get_random_i(0,len(slices_list_ori)-1)]]
+            beat_frame_nums = int(self.default_output_fps * (beats[i+1] - beats[i])) + compensation[i]
+            #add effect on slices less than 2 seconds
+            if beat_frame_nums < self.default_output_fps * 2:
+                self.effect = self.effect_list[get_random_i(0,len(self.effect_list)-1)]
+                slices_list = slice_list_ori
             else:
-                slices_list = slices_list_ori
+                self.effect = "None"
+                slices_list = [slice_list_ori[get_random_i(0,len(slice_list_ori)-1)]]
             last_start_width_list = [0] * len(slices_list)
             last_pos_list = [(0,0)] * len(slices_list)
-            beat_frame_nums = int(self.default_output_fps * (beats[i+1] - beats[i])) + compensation[i]
             slice_flow_list, slice_info_list = self.prepare_beat_slice_flow(slices_list, beat_frame_nums, (beats[i+1] - beats[i]), already_choosen)
             cur_frame_index = 0
             for j in range(beat_frame_nums):
-                frame, failed_index = self.generate_frame(slice_flow_list, slice_info_list, base_slice_info["width"], last_start_width_list, last_pos_list, caption_height, cur_frame_index)
+                frame, failed_index = self.generate_frame(beat_frame_nums, slice_flow_list, slice_info_list, last_start_width_list, last_pos_list, caption_height, cur_frame_index, (base_slice_info["width"], real_height))
                 while frame == []:
                     if cur_frame_index == 0:
                         #only replace failed part
@@ -324,17 +335,13 @@ class Mov():
                         slice_flow_list[failed_index] = slice_flow_failed[0]
                         slice_info_list[failed_index] = slice_info_failed[0]
                     else:
-                        print(failed_index)
-                        print(slice_info_list[failed_index])
-                        print(beat_frame_nums)
-                        print((beats[i+1] - beats[i]))
                         self.release_slices(slice_flow_list)
                         slice_flow_list, slice_info_list = self.prepare_beat_slice_flow(slices_list, beat_frame_nums, (beats[i+1] - beats[i]), already_choosen)
                     cur_frame_index = 0
                     last_start_width_list = [0] * len(slices_list)
                     last_pos_list = [(0,0)] * len(slices_list)
-                    frame = self.generate_frame(slice_flow_list, slice_info_list, base_slice_info["width"], last_start_width_list, last_pos_list, caption_height, cur_frame_index)
-                self.write_frame_to_flow(output_flow, frame, base_slice_info["width"], real_height)
+                    frame = self.generate_frame(beat_frame_nums, slice_flow_list, slice_info_list, last_start_width_list, last_pos_list, caption_height, cur_frame_index, (base_slice_info["width"], real_height))
+                self.write_frame_to_flow(output_flow, frame)
                 cur_frame_index += 1
                 writed_frames += 1
                 if writed_frames == total_length:
@@ -351,7 +358,7 @@ class Mov():
     def combine_slices_without_beats(self, slices_list, slice_size, output_file_name, time, caption_height):
         already_choosen = []
         base_slice_info = self.rec.get_movie_slice_base_info()
-        real_height = base_slice_info["height"] - caption_height
+        real_height = int(base_slice_info["height"] * (1 - caption_height/100))
         writed_frames = 0
         last_start_width_list = [0] * len(slices_list)
         output_flow = cv2.VideoWriter(output_file_name, self.default_output_fourcc, self.default_output_fps, (base_slice_info["width"],real_height))
@@ -365,7 +372,7 @@ class Mov():
             write_frame_nums = 0
             need_write_nums = slice_info["length"] if (total_length - i > slice_info["length"]) else (total_length - i)
             for j in range(need_write_nums):
-                frame = self.generate_frame(slice_flow_list, slice_info_list, base_slice_info["width"], last_start_width_list, last_pos_list, caption_height, cur_frame_index)
+                frame = self.generate_frame(beat_frame_nums, slice_flow_list, slice_info_list, last_start_width_list, last_pos_list, caption_height, cur_frame_index, (base_slice_info["width"], real_height))
                 if frame == []:
                     break
                 self.write_frame_to_flow(output_flow, frame, base_slice_info["width"], real_height)
@@ -461,35 +468,35 @@ class Mov():
                 os.remove(movie_file)
                 movie_file = lrc_movie_file
         out_movie, out_movie_path = self.add_music(music_file_list, music_info_list, commands["time"], movie_file, self.output_movie_path + commands["title"])
-        if commands["opconf"] == None and commands["edconf"] == None:
-            os.remove(movie_file)
-            return
         full_movie = []
         make_opening = False
         make_ending = False
-        if commands["opconf"] != None:
-            make_opening = True
-            image = self.painter.generate_image(commands["opconf"], width, height)
-            if image == []:
-                return
-            opening_movie, opening_file_name = self.painter.add_opening_or_ending("opening", out_movie_path, image, self.default_output_fps, self.default_output_fourcc, width, height)
-            full_movie.append(opening_movie)
-        full_movie.append(out_movie)
-        if commands["edconf"] != None:
-            make_ending = True
-            image = self.painter.generate_image(commands["edconf"], width, height)
-            if image == []:
-                return
-            ending_movie, ending_file_name = self.painter.add_opening_or_ending("ending", out_movie_path, image, self.default_output_fps, self.default_output_fourcc, width, height)
-            full_movie.append(ending_movie)
+        if commands["opconf"] != None or commands["edconf"] != None:
+            if commands["opconf"] != None:
+                make_opening = True
+                image = self.painter.generate_image(commands["opconf"], width, height)
+                if image == []:
+                    return
+                opening_movie, opening_file_name = self.painter.add_opening_or_ending("opening", out_movie_path, image, self.default_output_fps, self.default_output_fourcc, width, height)
+                full_movie.append(opening_movie)
+            full_movie.append(out_movie)
+            if commands["edconf"] != None:
+                make_ending = True
+                image = self.painter.generate_image(commands["edconf"], width, height)
+                if image == []:
+                    return
+                ending_movie, ending_file_name = self.painter.add_opening_or_ending("ending", out_movie_path, image, self.default_output_fps, self.default_output_fourcc, width, height)
+                full_movie.append(ending_movie)
+        else:
+            full_movie.append(out_movie)
         if len(full_movie) > 1:
             final_movie = concatenate_videoclips(full_movie, method='compose')
-            final_path = '.'.join(out_movie_path.split('.')[:-1]) + \
-                            ('_op' if make_opening == True else '') + \
-                            ('_ed' if make_ending == True else '') + \
-                            '.' + out_movie_path.split('.')[-1]
         else:
             final_movie = full_movie[0]
+        final_path = '.'.join(out_movie_path.split('.')[:-1]) + \
+                        ('_op' if make_opening == True else '') + \
+                        ('_ed' if make_ending == True else '') + \
+                        '.' + out_movie_path.split('.')[-1]
         final_movie.write_videofile(final_path, codec = self.default_moviepy_codec)
         if make_opening == True:
             os.remove(opening_file_name)
