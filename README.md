@@ -1,7 +1,10 @@
+注：这就是写着玩的东西，有不少bug，请不要尝试pull下去运行。。。
+传上来仅仅是为了备份。。。
+
 #author: livingthings, a crazy fans of aragaki_yui
 #data:   2020.8.7
-#this is about how to build your own project
-#我永远爱gakki!
+#this text is about how to build an mv of aragaki yui
+#[Ne pas perdre espoir Cest mon seul desir]
 
 流程：
 1. [python main.py --listen]
@@ -35,10 +38,6 @@
     默认使用目录[./wa/album_of_gaki/]下的照片，你也可以指定其他目录，比如之前学习的目录
     但是指定的目录只能是[./wa/]下的
     生成的音乐相册会被放到目录[./wa/output_movie/]下
-    
-8. [python main.py --catch -picture] [python main.py --catch -video]
-    如果你没有（或者懒得找）新垣结衣的照片和视频，试试这两个命令
-    可以自动在网上找，前提是你得联网
     
     
     
@@ -75,7 +74,3 @@ workflow:
     default load pictures in folder [./wa/album_of_gaki/], you can specify this
     but must under the main folder [./wa/]
     the generated music album will be at folder [./wa/output_movie/]
-    
-8. [python main.py --catch -picture] [python main.py --catch -video]
-    if you don't have pictures or videos of aragaki yui, try this command
-    will automatically search on the internet, make sure you can touch the net !
