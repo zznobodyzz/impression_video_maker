@@ -39,6 +39,7 @@ def print_help():
                 "\t                      the params are as follows:\n" \
                 "\t                          [-train-help]    --- a helping tool to help you build your own dataset for express recognition\n" \
                 "\t                          [-use-learn-pic] --- use --learn command pictures\n" \
+                "\t                          [-use-slice <slice-folder>]     --- use slice\n" \
                 "\t                          [-max-pic-num <max_num_of_picture_you_want_to_mark_at_on_time>]\n" \
                 "\t                          [-start]         --- start training\n" \
                 "\t--slice-pocess ---    do process on current slices\n" \
@@ -52,7 +53,8 @@ def print_help():
                 "\t                          [-slow-times <slow_to_this_size>]\n" \
                 "\t                          [-slice-size-range <min-max>]\n" \
                 "\t                          [-get-slice-length <express_normal_happy_blue_default>]\n" \
-                "\t                          [-rescan]    ---  rebuild database\n" \
+                "\t                          [-scan <info|face|express>]    ---  rebuild database\n" \
+                "\t                          [-path <folder>] --- process this slice folder\n" \
                 "\t--make-mv      ---    make an mv with specified params\n" \
                 "\t                      the params are as follows:\n" \
                 "\t                          [-random]  ---   generate a random mv with a random mp3 bgm\n" \
@@ -184,7 +186,7 @@ def get_make_mv_commands(argvs, index, length):
                 "edconf":None, "express":"default", \
                 "beat-mode":False, "slice-size":0, "beat-rate":2, "all-mode":False, \
                 "no-repeat":False, "feature":"", "lrc":None, "caption-height":0, "face-size":0, \
-                "multi-mode":"nofollow", "path":[]}
+                "multi-mode":"no", "path":[]}
     if index + 1 == length:
         log.log("get_make_mv_commands", "not enough parameters")
         return None
@@ -221,8 +223,8 @@ def get_make_mv_commands(argvs, index, length):
         result["caption-height"] = get_argv(argvs, argvs.index("-caption-height"), result["caption-height"])
     if "-multi-mode" in argvs:
         result["multi-mode"] = get_argv(argvs, argvs.index("-multi-mode"), result["multi-mode"])
-        if "-path" in argvs:
-            result["path"] = get_argvs(argvs, argvs.index("-path"), result["path"])
+    if "-path" in argvs:
+        result["path"] = get_argvs(argvs, argvs.index("-path"), result["path"])
     return result
     
 def get_make_album_commands(argvs, index, length):
@@ -282,10 +284,12 @@ def get_recognize_commands(argvs, index, length):
 
 def get_train_help_commands(argvs, index, length):
     #default values
-    result = {"use-learn-pic":False, "max-pic-num":0}
+    result = {"use-learn-pic":False, "max-pic-num":0, "use-slice":None}
     argvs = argvs[index + 1:]
     if "-use-learn-pic" in argvs:
         result["use-learn-pic"] = True
+    if "-use-slice"in argvs:
+        result["use-slice"] = get_argv(argvs, argvs.index("-use-slice"), result["use-slice"])
     if "-max-pic-num" in argvs:
         result["max-pic-num"] = get_argv(argvs, argvs.index("-max-pic-num"), result["max-pic-num"])
     return result
@@ -335,11 +339,17 @@ def execute_album_learn_commands(argvs):
 def execute_slice_pocess_commands(argvs):
     result = {"feature":"", "express":"default", \
                 "top-cut":0, "bottom-cut":0, "left-cut":0, "right-cut":0, "slow-times":0, \
-                "slice-size-range":"0-255","path":''}
+                "slice-size-range":"0-255","path":'',"scan":"info"}
     if '-path' in argvs:
         result["path"] = get_argv(argvs, argvs.index("-path"), result["path"])
-    if "-rescan" in argvs:
-        rec.sync_slice_info(result["path"])
+    if "-scan" in argvs:
+        result["scan"] = get_argv(argvs, argvs.index("-scan"), result["scan"])
+        if result["scan"] == "info":
+            rec.sync_slice_info(result["path"])
+        elif result["scan"] == "face":
+            rec.sync_slice_face_info(result["path"])
+        elif result["scan"] == "express":
+            rec.sync_slice_express_info(result["path"])
         exit()
     if "-feature" in argvs:
         result["feature"] = get_argv(argvs, argvs.index("-feature"), result["feature"])
