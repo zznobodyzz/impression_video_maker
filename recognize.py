@@ -113,9 +113,8 @@ class Rec():
                 self.video_db = dict()
             else:
                 self.log.log("init_video_database", "found video_db, going to use it")
-        self.old_video_db = copy.deepcopy(self.video_db)
             
-    def init_slice_database(self, path):
+    def init_slice_database(self, slice_folder):
         if self.slice_db != None:
             return
         if os.path.exists(self.slice_database) == False:
@@ -128,18 +127,18 @@ class Rec():
                 self.slice_db = dict()
             else:
                 self.log.log("init_slice_database", "found slice_db, going to use it")
-        if path == '':
+        if slice_folder == '':
             if os.path.exists(self.slice_path) == False:
                 os.mkdir(self.slice_path)
                 return
         else:
-            slice_path = self.workarea + path
+            slice_path = self.workarea + slice_folder
             if slice_path[-1] != '/':
                 slice_path += '/'
             if slice_path not in self.slice_db.keys():
                 self.slice_db[slice_path] = dict()
             if os.path.exists(slice_path) == False:
-                self.log.log("init_slice_database", "slice_path specified not exists" %(slice_path))
+                self.log.log("init_slice_database", "slice_path [%s] specified not exists" %(slice_path))
                 os.mkdir(slice_path)
             self.slice_path = slice_path
         
@@ -168,7 +167,7 @@ class Rec():
                 self.video_db[file_path]["length"] = int(flow.get(cv2.CAP_PROP_FRAME_COUNT))
                 self.video_db[file_path]["width"] = int(flow.get(cv2.CAP_PROP_FRAME_WIDTH))
                 self.video_db[file_path]["height"] = int(flow.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                self.video_db[file_path]["fps"] = int(flow.get(cv2.CAP_PROP_FPS))
+                self.video_db[file_path]["fps"] = round(flow.get(cv2.CAP_PROP_FPS))
                 self.video_db[file_path]["fourcc"] = int(flow.get(cv2.CAP_PROP_FOURCC))
                 self.video_db[file_path]["schedule"] = 0
                 self.video_db[file_path]["match_num"] = 0
@@ -177,6 +176,7 @@ class Rec():
         if new_file != []:
             self.log.log("check_new_video", "successfully loaded %d videos" %(len(new_file)))
             self.log.log("check_new_video", "they are [" + " ".join(new_file) + "]")
+        self.old_video_db = copy.deepcopy(self.video_db)
     
     def update_slice_db(self, slice_name, slice_info, path, operation = "add", predict = False):
         self.init_slice_database(path)
@@ -208,6 +208,72 @@ class Rec():
                 return 0,0,0
         return face_locations[index][3], face_locations[index][1], (face_locations[index][1] - face_locations[index][3]) / video_width
         
+    def sync_slice_face_info(self, slice_path):
+        self.init_slice_database(slice_path)
+        self.recexp.load_recognizer()
+        for slice in list(self.slice_db[self.slice_path]):
+            if os.path.exists(slice) == False:
+                continue
+            self.log.log("sync_slice_face_info", "processing file [%s]" %(slice))
+            flow = cv2.VideoCapture(slice)
+            ret, frame = flow.read()
+            self.slice_db[self.slice_path][slice]["face_location_left"], \
+            self.slice_db[self.slice_path][slice]["face_location_right"], \
+            self.slice_db[self.slice_path][slice]["face_percent"] = \
+            self.detect_face_info(frame, self.slice_db[self.slice_path][slice]["width"], self.default_face_confidence)
+            flow.release()
+        self.save_slice_database()
+            
+    def sync_slice_express_info(self, slice_path, mode, feature):
+        self.init_slice_database(slice_path)
+        self.recexp.load_recognizer()
+        i = 0
+        slice_key_list = list(self.slice_db[self.slice_path])
+        i = 0
+        if feature != "":
+            for slice in slice_key_list:
+                if feature in slice:
+                    i = slice_key_list.index(slice)
+        while i < len(slice_key_list):
+            slice = slice_key_list[i]
+            if os.path.exists(slice) == False:
+                i += 1
+                continue
+            self.log.log("sync_slice_express_info", "processing file [%s]" %(slice))
+            flow = cv2.VideoCapture(slice)
+            ret, frame = flow.read()
+            if mode == "auto":
+                express = self.recexp.predict_image(frame)
+            elif mode == "manual":
+                while True:
+                    while ret == True:
+                        last_frame = frame
+                        cv2.imshow(slice, frame)
+                        key = cv2.waitKey(10)
+                        if (key & 0xff) == ord('q'):
+                            break
+                        ret, frame = flow.read()
+                    express = self.recexp.manual_mark_image(slice, last_frame)
+                    if express in ["gakki-smile","default"]:
+                        break
+                    if express == "last-slice" and i != 0:
+                        i -= 2
+                        express = "default"
+                        break
+                    if express == "again":
+                        flow.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        ret, frame = flow.read()
+                    if express == "end":
+                        self.slice_db[self.slice_path][slice]["express"] = "default"
+                        flow.release()
+                        self.save_slice_database()
+                        exit()
+            self.log.log("sync_slice_express_info", "file [%s] is [%s]" %(slice, express))
+            self.slice_db[self.slice_path][slice]["express"] = express
+            flow.release()
+            i += 1
+        self.save_slice_database()
+        
     def sync_slice_info(self, slice_path):
         self.init_slice_database(slice_path)
         self.recexp.load_recognizer()
@@ -220,41 +286,23 @@ class Rec():
             if file_path not in self.slice_db[self.slice_path].keys():
                 self.log.log("sync_slice_info", "new file found [%s]" %(file_path))
                 flow = cv2.VideoCapture(file_path)
-                '''
-                express_result = [file_path.find(i) for i in self.recexp.label_define]
-                if max(express_result) != -1:
-                    express = self.recexp.label_define[express_result.index(max(express_result))]
-                    new_file_path = file_path
-                else:
-                    ret, frame = flow.read()
-                    express = self.recexp.predict_image(frame)
-                    new_file_path = append_file_name(file_path, express)
-                '''
-                new_file_path = file_path
-                express = "default"
-                self.slice_db[self.slice_path][new_file_path] = dict()
-                self.slice_db[self.slice_path][new_file_path]["length"] = int(flow.get(cv2.CAP_PROP_FRAME_COUNT))
-                self.slice_db[self.slice_path][new_file_path]["width"] = int(flow.get(cv2.CAP_PROP_FRAME_WIDTH))
-                self.slice_db[self.slice_path][new_file_path]["height"] = int(flow.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                self.slice_db[self.slice_path][new_file_path]["fps"] = int(flow.get(cv2.CAP_PROP_FPS))
-                self.slice_db[self.slice_path][new_file_path]["fourcc"] = int(flow.get(cv2.CAP_PROP_FOURCC))
-                self.slice_db[self.slice_path][new_file_path]["express"] = express
+                self.slice_db[self.slice_path][file_path] = dict()
+                self.slice_db[self.slice_path][file_path]["length"] = int(flow.get(cv2.CAP_PROP_FRAME_COUNT))
+                self.slice_db[self.slice_path][file_path]["width"] = int(flow.get(cv2.CAP_PROP_FRAME_WIDTH))
+                self.slice_db[self.slice_path][file_path]["height"] = int(flow.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                self.slice_db[self.slice_path][file_path]["fps"] = int(flow.get(cv2.CAP_PROP_FPS))
+                self.slice_db[self.slice_path][file_path]["fourcc"] = int(flow.get(cv2.CAP_PROP_FOURCC))
+                self.slice_db[self.slice_path][file_path]["express"] = "default"
                 ret, frame = flow.read()
-                self.slice_db[self.slice_path][new_file_path]["face_location_left"], \
-                self.slice_db[self.slice_path][new_file_path]["face_location_right"], \
-                self.slice_db[self.slice_path][new_file_path]["face_percent"] = \
-                self.detect_face_info(frame, self.slice_db[self.slice_path][new_file_path]["width"])
-                #self.slice_db[self.slice_path][new_file_path]["face_percent"] = 100
+                self.slice_db[self.slice_path][file_path]["face_percent"] = 100
                 flow.release()
-                if new_file_path != file_path:
-                    os.rename(file_path, new_file_path)
-                    self.log.log("sync_slice_info", "renamed the file automatically")
+        if len(self.slice_db[self.slice_path].keys()) == 0:
+            self.slice_db.pop(self.slice_path)
         self.save_slice_database()
         self.log.log("sync_slice_info", "sync_slice_info done")
         
     def open_slice_video(self, flow_file, origin_video_info, start_second, face_location):
-        codec = origin_video_info["fourcc"]
-        fourcc = cv2.VideoWriter_fourcc(chr(codec&0xFF), chr((codec>>8)&0xFF), chr((codec>>16)&0xFF), chr((codec>>24)&0xFF))
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
         file_name = flow_file.split('/')[-1]
         file_name = '.'.join(file_name.split('.')[:-1])
         slice_file_name = self.slice_path+file_name+'_'+str(start_second)+"s"
@@ -274,7 +322,7 @@ class Rec():
         self.slice_db[self.slice_path][slice_file_name]["width"] = origin_video_info["width"]
         self.slice_db[self.slice_path][slice_file_name]["height"] = origin_video_info["height"]
         self.slice_db[self.slice_path][slice_file_name]["fps"] = origin_video_info["fps"]
-        self.slice_db[self.slice_path][slice_file_name]["fourcc"] = origin_video_info["fourcc"]
+        self.slice_db[self.slice_path][slice_file_name]["fourcc"] = fourcc
         self.slice_db[self.slice_path][slice_file_name]["face_percent"] = (face_location[3] - face_location[1])/origin_video_info["width"]
         return slice_flow, slice_file_name
         
@@ -351,6 +399,7 @@ class Rec():
             ret, frame = flow.read()
             if ret == False:
                 break
+            #frame = cv2.resize(frame, (1920,1080))
             rgb_frame.append(frame[:, :, ::-1])
         return rgb_frame
         
@@ -708,33 +757,34 @@ class Rec():
         self.save_video_database()
         self.save_slice_database()
         
-    def get_movie_slices_total_length(self, commands):
-        self.init_slice_database(commands["path"])
+    def get_movie_slices_total_length(self, commands, slice_path = None):
+        self.init_slice_database(commands["slice-path"])
         total_length = 0
-        for info in self.slice_db[self.slice_path].values():
+        if slice_path == None:
+            slice_path = self.slice_path
+        for info in self.slice_db[slice_path].values():
             total_length += (info["length"]//info["fps"])
         return total_length
         
     def get_movie_express_slices_length(self, express, commands):
-        self.init_slice_database(commands["path"])
+        self.init_slice_database(commands["slice-path"])
+        if commands["slice-path"] == '':
+            slice_path_list = self.slice_db.keys()
+        else:
+            slice_path_list = self.slice_path
         total_length = 0
-        if express == "default":
-            return self.get_movie_slices_total_length()
-        for info in self.slice_db[self.slice_path].values():
-            if info["express"] == express:
-                total_length += (info["length"]//info["fps"])
+        for path in slice_path_list:
+            path_total_length = 0
+            if express == "default":
+                path_total_length = self.get_movie_slices_total_length(commands, path)
+                print("slice-path: [%s] --- total length: [%d s]" %(path, path_total_length))
+            else:
+                for info in self.slice_db[path].values():
+                    if info["express"] == express:
+                        path_total_length += (info["length"]//info["fps"])
+                print("slice-path: [%s] --- express[%s]: [%d s]" %(path, express, path_total_length))
+            total_length += path_total_length
         return total_length
     
-    def get_movie_slice_base_info(self, path = ''):
-        self.init_slice_database(path)
-        min_pixel = 3440*1920
-        return_info = None
-        for path in self.slice_db.keys():
-            for info in self.slice_db[path].values():
-                current_pixel = info["width"] * info["height"]
-                if current_pixel < min_pixel:
-                    min_pixel = current_pixel
-                    return_info = info
-        return return_info
         
         

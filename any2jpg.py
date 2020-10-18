@@ -8,7 +8,7 @@ def png2jpg(png_file_path, jpg_file_path):
     w, h = img.shape[::-1]
     outfile = jpg_file_path
     img = Image.open(png_file_path)
-    img = img.resize((int(w / 2), int(h / 2)), Image.ANTIALIAS)
+    #img = img.resize((int(w / 2), int(h / 2)), Image.ANTIALIAS)
     if len(img.split()) == 4:
         # prevent IOError: cannot write mode RGBA as BMP
         r, g, b, a = img.split()
@@ -34,4 +34,3 @@ def any2jpg(input_file_path, output_file_path):
         return jpeg2jpg(input_file_path, output_file_path)
     else:
         return True
-    

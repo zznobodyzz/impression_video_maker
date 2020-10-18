@@ -48,13 +48,11 @@ def print_help():
                 "\t                          [-cut-slice <cut_to_n_seconds>] --- longer than n seconds' slices will be cut to n seconds\n" \
                 "\t                          [-slow-slice] --- generate a slice's slow version" \
                 "\t                          [-cut-face]  --- \n" \
-                "\t                          [-slice-size <slice-size less than this will be processed>]\n" \
                 "\t                          [-feature    <only_slice_with_this_in_name_will_be_picked>]\n" \
-                "\t                          [-slow-times <slow_to_this_size>]\n" \
                 "\t                          [-slice-size-range <min-max>]\n" \
                 "\t                          [-get-slice-length <express_normal_happy_blue_default>]\n" \
-                "\t                          [-scan <info|face|express>]    ---  rebuild database\n" \
-                "\t                          [-path <folder>] --- process this slice folder\n" \
+                "\t                          [-scan <info|face|express -mode <auto|manual>>]    ---  rebuild database\n" \
+                "\t                          [-slice-path <folder>] --- process this slice folder\n" \
                 "\t--make-mv      ---    make an mv with specified params\n" \
                 "\t                      the params are as follows:\n" \
                 "\t                          [-random]  ---   generate a random mv with a random mp3 bgm\n" \
@@ -71,10 +69,11 @@ def print_help():
                 "\t                          [-beat-rate  <frequence of beat(fast if small)>]\n" \
                 "\t                          [-slice-size <slice_seconds>] --- only slice more than <slice-size> will picked\n" \
                 "\t                          [-face-size <face_size_percent>] --- only face bigger than <face-size> will picked\n" \
-                "\t                          [-lrc-id     <song-id>] --- use this id to get lrc and append lrc to the video\n" \
+                "\t                          [-lrc     <lrc-json>] --- use this id to get lrc and append lrc to the video\n" \
                 "\t                          [-caption-height <n-pixel>] --- cut the n pixel of the bottom\n" \
-                "\t                          [-multi-mode <follow|nofollow>] --- will pick up slices from multi folder, and the whole mv will split to multi parts in width\n" \
-                "\t                          [-path <folder1> <folder2>...] --- will pick up slices from multi folder, and the whole mv will split to multi parts in width\n" \
+                "\t                          [-multi-mode <follow|no>] --- will pick up slices from multi folder, and the whole mv will split to multi parts in width\n" \
+                "\t                          [-slice-path <folder1> <folder2>...] --- will pick up slices from multi folder, and the whole mv will split to multi parts in width\n" \
+                "\t                          [-music-only -music-bg <bg.json>]"
                 "\t--album-learn  ---    learn pictures for album making, must have an initialized express recognizer\n" \
                 "\t                      the params are as follows:\n" \
                 "\t                          [-folder <picture_path>]\n" \
@@ -123,7 +122,7 @@ def get_make_mv_random_commands():
     result["caption-height"] = 0
     result["face-size"] = 0
     result["multi-mode"] = "nofollow"
-    result["path"] = []
+    result["slice-path"] = []
     expresses = ["normal","happy","blue"]
     express_num = len(expresses)
     for i in range(express_num):
@@ -184,9 +183,9 @@ def get_make_mv_commands(argvs, index, length):
     #default values
     result = {"music":[], "time":0, "title":"for_aragaki", "opconf":None, \
                 "edconf":None, "express":"default", \
-                "beat-mode":False, "slice-size":0, "beat-rate":2, "all-mode":False, \
+                "beat-mode":False, "slice-size-range":"0-255", "beat-rate":2, "all-mode":False, \
                 "no-repeat":False, "feature":"", "lrc":None, "caption-height":0, "face-size":0, \
-                "multi-mode":"no", "path":[]}
+                "multi-mode":"no", "slice-path":[],"music-only":False, "music-bg":None}
     if index + 1 == length:
         log.log("get_make_mv_commands", "not enough parameters")
         return None
@@ -215,16 +214,22 @@ def get_make_mv_commands(argvs, index, length):
         result["beat-mode"] = True
         if "-beat-rate" in argvs:
             result["beat-rate"] = get_argv(argvs, argvs.index("-beat-rate"), result["beat-rate"])
-    if "-slice-size" in argvs:
-        result["slice-size"] = get_argv(argvs, argvs.index("-slice-size"), result["slice-size"])
+    if "-slice-size-range" in argvs:
+        result["slice-size-range"] = get_argv(argvs, argvs.index("-slice-size-range"), result["slice-size-range"])
+        result["slice-size"] = int(result["slice-size-range"].split("-")[0])
+        result["slice-max-size"] = int(result["slice-size-range"].split("-")[1])
     if "-face-size" in argvs:
         result["face-size"] = get_argv(argvs, argvs.index("-face-size"), result["face-size"])
     if "-caption-height" in argvs:
         result["caption-height"] = get_argv(argvs, argvs.index("-caption-height"), result["caption-height"])
     if "-multi-mode" in argvs:
         result["multi-mode"] = get_argv(argvs, argvs.index("-multi-mode"), result["multi-mode"])
-    if "-path" in argvs:
-        result["path"] = get_argvs(argvs, argvs.index("-path"), result["path"])
+    if "-slice-path" in argvs:
+        result["slice-path"] = get_argvs(argvs, argvs.index("-slice-path"), result["slice-path"])
+    if "-music-only" in argvs:
+        result["music-only"] = True
+        if "-music-bg" in argvs:
+            result["music-bg"] = get_argv(argvs, argvs.index("-music-bg"), result["music-bg"])
     return result
     
 def get_make_album_commands(argvs, index, length):
@@ -339,20 +344,22 @@ def execute_album_learn_commands(argvs):
 def execute_slice_pocess_commands(argvs):
     result = {"feature":"", "express":"default", \
                 "top-cut":0, "bottom-cut":0, "left-cut":0, "right-cut":0, "slow-times":0, \
-                "slice-size-range":"0-255","path":'',"scan":"info"}
-    if '-path' in argvs:
-        result["path"] = get_argv(argvs, argvs.index("-path"), result["path"])
+                "slice-size-range":"0-255","slice-path":'',"scan":"info", "mode":"auto"}
+    if '-slice-path' in argvs:
+        result["slice-path"] = get_argv(argvs, argvs.index("-slice-path"), result["slice-path"])
+    if "-feature" in argvs:
+        result["feature"] = get_argv(argvs, argvs.index("-feature"), result["feature"])
     if "-scan" in argvs:
         result["scan"] = get_argv(argvs, argvs.index("-scan"), result["scan"])
         if result["scan"] == "info":
-            rec.sync_slice_info(result["path"])
+            rec.sync_slice_info(result["slice-path"])
         elif result["scan"] == "face":
-            rec.sync_slice_face_info(result["path"])
+            rec.sync_slice_face_info(result["slice-path"])
         elif result["scan"] == "express":
-            rec.sync_slice_express_info(result["path"])
+            if "-mode" in argvs:
+                result["mode"] = get_argv(argvs, argvs.index("-mode"), result["mode"])
+            rec.sync_slice_express_info(result["slice-path"], result["mode"], result["feature"])
         exit()
-    if "-feature" in argvs:
-        result["feature"] = get_argv(argvs, argvs.index("-feature"), result["feature"])
     if "-slice-size-range" in argvs:
         result["slice-size-range"] = get_argv(argvs, argvs.index("-slice-size-range"), result["slice-size-range"])
     if "-express" in argvs:
@@ -364,11 +371,7 @@ def execute_slice_pocess_commands(argvs):
         length = rec.get_movie_express_slices_length(express, result)
         log.log("get-slice-length", "express [%s] total length is %d seconds" %(express, length))
     elif "-slow-slice" in argvs:
-        if "-slow-times" in argvs:
-            result["slow-times"] = get_argv(argvs, argvs.index("-slow-times"), result["slow-times"])
-        else:
-            log.log("slow-slice", "slow-times not set")
-            return
+        result["slow-times"] = get_argv(argvs, argvs.index("-slow-slice"), result["slow-times"])
         slice_list = mov.slomo_slice(result)
     elif "-cut-slice" in argvs:
         result["slice-size"] = get_argv(argvs, argvs.index("-slice-size"), result["slice-size"])

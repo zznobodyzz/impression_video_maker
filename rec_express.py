@@ -22,7 +22,7 @@ class RecExp():
         self.predict_sample = 10
         
     def detect_face(self, img_file):
-        image = fr.load_image_file(self.train_folder + img_file)
+        image = fr.load_image_file(img_file)
         face_locations = fr.face_locations(image)
         if len(face_locations) != 1:
             return []
@@ -35,10 +35,10 @@ class RecExp():
         ret, image = flow.read()
         face_locations = fr.face_locations(image[:, :, ::-1])
         if len(face_locations) != 1:
-            return []
+            return [], []
         (top, right, bottom, left) = face_locations[0]
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        return gray[top:bottom, left:right]
+        return image, gray[top:bottom, left:right]
         
     def detect_image_face(self, image):
         face_locations = fr.face_locations(image[:, :, ::-1])
@@ -79,33 +79,11 @@ class RecExp():
                 
     def save_traing_data(self):
         save_pkl(self.data_db_path, self.data_db)
-        
-    def prepare_training_data(self):
-        new_file = []
-        for pic in os.listdir(self.train_folder):
-            if pic not in self.data_db.keys():
-                if "happy" in pic:
-                    label = 1
-                elif "blue" in pic:
-                    label = 2
-                else:
-                    label = 3
-                face = self.detect_face(pic)
-                if face != []:
-                    self.data_db[pic] = dict()
-                    self.data_db[pic]["gray"] = copy.deepcopy(face)
-                    self.data_db[pic]["label"] = label
-                    new_file.append(pic)
-        if new_file != []:
-            self.log.log("prepare_training_data", "successfully loaded %d images" %(len(new_file)))
-            self.log.log("prepare_training_data", "they are [" + " ".join(new_file) + "]")
                     
     def training(self):
         self.log.log("training", "training...")
         self.load_recognizer()
         self.load_traing_data()
-        self.prepare_training_data()
-        self.save_traing_data()
         if len(self.data_db) == 0:
             self.log.log("training", "training data is not prepared, please put some training data into [%s] first" %(self.train_folder))
             return
@@ -128,9 +106,9 @@ class RecExp():
             sample_step = length//self.predict_sample
         result = [0,0,0,0]
         for i in range(0, length, sample_step):
-            face = self.detect_flow_face(flow, i)
-            if face != []:
-                express_index, confidence = self.recognizer.predict(face)
+            face, gray = self.detect_flow_face(flow, i)
+            if gray != []:
+                express_index, confidence = self.recognizer.predict(gray)
                 result[express_index] += 1
         self.log.log("predict_flow", "recognizer think it is a flow with %s face" %(self.label_define[result.index(max(result))]))
         return self.label_define[result.index(max(result))]
@@ -145,34 +123,99 @@ class RecExp():
             return None
         express_index, confidence = self.recognizer.predict(face)
         self.log.log("predict_image", "recognizer think it is a image with %s face" %(self.label_define[express_index]))
-        return self.label_define[express_index]
+        return self.label_define[express_index]        
         
+    def manual_mark_image(self, name, image):
+        height = image.shape[0]
+        width = image.shape[1]
+        image_tmp = image.copy()
+        text0 = "press 0: gakki-smile"
+        text1 = "press 1: default"
+        text2 = "press 2: again"
+        text3 = "press 3: last-slice"
+        text4 = "press 4: end"
+        cv2.putText(image_tmp, text0, (width//2,height//8*3), cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(image_tmp, text1, (width//2,height//8*4), cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(image_tmp, text2, (width//2,height//8*5), cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(image_tmp, text3, (width//2,height//8*6), cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(image_tmp, text4, (width//2,height//8*7), cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 255, 255), 2)
+        while True:
+            cv2.imshow(name, image_tmp)
+            k = cv2.waitKey(0)
+            cv2.destroyAllWindows()
+            if k == ord('0'):
+                return "gakki-smile"
+            elif k == ord('1'):
+                return "default"
+            elif k == ord('2'):
+                return "again"
+            elif k == ord('3'):
+                return "last-slice"
+            elif k == ord('4'):
+                return "end"
+            else:
+                continue
+        
+    def load_pic_from_slice(self, slice_folder, max_num):
+        if slice_folder[-1] != '/':
+            slice_folder += '/'
+        success_num = 0
+        valid_slice = []
+        slices = os.listdir(self.workarea + slice_folder)
+        while success_num < max_num:
+            index = get_random_i(0, len(slices) - 1)
+            slice_name = self.workarea + slice_folder + slices[index]
+            if slice_name in self.data_db.keys():
+                continue
+            flow = cv2.VideoCapture(slice_name)
+            frame, gray = self.detect_flow_face(flow, 0)
+            if gray == []:
+                flow.release()
+                continue
+            express = self.show_image_and_let_human_choose(None, frame)
+            self.data_db[slice_name] = dict()
+            self.data_db[slice_name]["type"] = "slice"
+            self.data_db[slice_name]["gray"] = copy.deepcopy(gray)
+            self.data_db[slice_name]["label"] = express
+            success_num += 1
+            valid_slice.append(slice_name)
+        if valid_slice != []:
+            self.log.log("load_pic_from_slice", "successfully loaded %d slices" %(len(valid_slice)))
+            self.log.log("load_pic_from_slice", "they are [" + " ".join(valid_slice) + "]")
+        return
+       
     def load_pic_from_folder(self, folder, max_num):
         valid_pic = []
+        success_num = 0
         for pic in os.listdir(folder):
-            if self.data_db != None and pic in self.data_db.keys():
-                continue
-            already_marked = False
-            for express in self.label_define:
-                if express in pic:
-                    already_marked = True
-                    break
-            if already_marked == True:
+            if pic in self.data_db.keys():
                 continue
             new_file_path = ".".join(pic.split(".")[:-1]) + ".jpg"
             any2jpg(folder + pic, folder + new_file_path)
-            if self.detect_face(new_file_path) != []:
-                valid_pic.append(folder + new_file_path)
-                if max_num != 0 and len(valid_pic) >= max_num:
-                    break
+            pic = folder + new_file_path
+            gray = self.detect_face(pic)
+            if gray == []:
+                continue
+            express = show_image_and_let_human_choose(folder + new_file_path, None)
+            self.data_db[pic] = dict()
+            self.data_db[pic]["type"] = "picture"
+            self.data_db[pic]["gray"] = copy.deepcopy(gray)
+            self.data_db[pic]["label"] = express
+            success_num += 1
+            valid_pic.append(pic)
+            if max_num == success_num:
+                break
         if valid_pic != []:
             self.log.log("load_pic_from_folder", "successfully loaded %d images" %(len(valid_pic)))
             self.log.log("load_pic_from_folder", "they are [" + " ".join(valid_pic) + "]")
-        return valid_pic
+        return
         
-    def show_image_and_let_human_choose(self, pic):
+    def show_image_and_let_human_choose(self, pic_file, pic_frame):
         express = 0
-        image = cv2.imread(pic)
+        if pic_file != None:
+            image = cv2.imread(pic)
+        else:
+            image = pic_frame
         height = image.shape[0]
         width = image.shape[1]
         image_tmp = image.copy()
@@ -182,39 +225,27 @@ class RecExp():
         cv2.putText(image_tmp, text1, (width//2,height//7*4), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 0), 2)
         cv2.putText(image_tmp, text2, (width//2,height//7*5), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 0), 2)
         cv2.putText(image_tmp, text3, (width//2,height//7*6), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 0), 2)
-        cv2.imshow(pic,image_tmp)
-        k = cv2.waitKey(0)
-        if k == ord('1'):
-            express = 1
-        elif k == ord('2'):
-            express = 2
-        elif k == ord('3'):
-            express = 3
-        cv2.destroyAllWindows()
-        return express
-
-    def store_image_as_training_data(self, pic, time_stamp, express, num):
-        file_name = pic.split("/")[-1]
-        path_name = '/'.join(pic.split("/")[:-1]) + '/'
-        new_file_name = '.'.join(file_name.split('.')[:-1])
-        suffix = file_name.split('.')[-1]
-        new_file_name += '_'.join([time_stamp, self.label_define[express], str(num)]) + '.' + suffix
-        save_name = self.train_folder + "/" + new_file_name
-        shutil.copyfile(pic, save_name)
-        if self.train_folder == path_name:
-            os.remove(pic)
+        while True:
+            cv2.imshow("show_image",image_tmp)
+            k = cv2.waitKey(0)
+            cv2.destroyAllWindows()
+            if k == ord('1'):
+                return 1
+            elif k == ord('2'):
+                return 2
+            elif k == ord('3'):
+                return 3
+            else:
+                continue
         
     def help_marking(self, commands, picture_path):
         self.load_traing_data()
-        if commands["use-learn-pic"] == True:
-            pics = self.load_pic_from_folder(picture_path, commands["max-pic-num"])
-        else:
-            pics = self.load_pic_from_folder(self.train_folder, commands["max-pic-num"])
         express_nums = [0,0,0,0]
-        time_stamp = str(int(time.time()))
-        for pic in pics:
-            express = self.show_image_and_let_human_choose(pic)
-            express_nums[express] += 1
-            self.store_image_as_training_data(pic, time_stamp, express, express_nums[express])
-        self.log.log("help_marking", "operation done on %d files" %(len(pics)))
+        if commands["use-slice"] != None:
+            self.load_pic_from_slice(commands["use-slice"], 50 if commands["max-pic-num"] == 0 else commands["max-pic-num"])
+        elif commands["use-learn-pic"] == True:
+            self.load_pic_from_folder(picture_path, commands["max-pic-num"])
+        else:
+            self.load_pic_from_folder(self.train_folder, commands["max-pic-num"])
+        self.save_traing_data()
     

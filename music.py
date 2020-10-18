@@ -170,7 +170,6 @@ class Mus():
         delta = []
         for i in range(len(beats)-1):
             delta.append(beats[i + 1] - beats[i])
-        print(delta)
         return beats, base_delta
         
     def get_music_duration(self, y, sr):
@@ -260,7 +259,6 @@ class Mus():
                     y, sr = librosa.load(self.music_path+file)
                     self.mus_db[file]["duration"] = self.get_music_duration(y, sr)
                     self.mus_db[file]["beats"], self.mus_db[file]["beat_delta"] = self.get_music_beats(y, sr)
-                    #if beats not enough, need fill to the end
                 else:
                     y, sr = librosa.load(self.music_path+file)
                     self.mus_db[file]["duration"] = self.get_music_duration(y, sr)
