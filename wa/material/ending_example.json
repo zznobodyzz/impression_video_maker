@@ -1,0 +1,22 @@
+{
+    "backgroundcolor": "[0,0,0]",
+    "text": 
+    [
+        {
+            "content":"Thanks For Watching",
+            "color": "[255,255,255]",
+            "font": "default.ttc",
+            "top": "0.3",
+            "left": "0.30",
+            "size": "35"
+        },
+        {
+            "content":"To Be Continue",
+            "color": "[255,255,255]",
+            "font": "default.ttc",
+            "top": "0.5",
+            "left": "0.30",
+            "size": "35"
+        }
+    ]
+}

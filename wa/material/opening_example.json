@@ -1,0 +1,22 @@
+{
+    "backgroundcolor": "[0,0,0]",
+    "text": 
+    [
+        {
+            "content":"あらがき ゆい 最高！",
+            "color": "[255,255,255]",
+            "font": "default.ttc",
+            "top": "0.3",
+            "left": "0.25",
+            "size": "50"
+        },
+        {
+            "content":" ",
+            "color": "[255,255,255]",
+            "font": "default.ttc",
+            "top": "0.6",
+            "left": "0.35",
+            "size": "20"
+        }
+    ]
+}
