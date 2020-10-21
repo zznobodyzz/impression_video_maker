@@ -398,7 +398,6 @@ class Mov():
         base_slice_info = self.get_movie_slice_base_info(slices_list)
         writed_frames = 0
         real_height = int(base_slice_info["height"] * (1 - caption_height/100))
-        return base_slice_info["width"], real_height
         #don't know why but necessary
         for i in range(len(beats)):
             beats[i] -= 0.3
