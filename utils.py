@@ -2,6 +2,7 @@ import random
 import pickle
 import copy
 import cv2
+import collections
 
 def get_argv(argvs, index, default = None):
     if index + 1 < len(argvs):
@@ -61,3 +62,14 @@ def show_image(title, image):
     cv2.imshow(title, image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+    
+def print_dict(diction, tab = 0):
+    print_result = ""
+    max_key_len = max([len(str(key)) for key in diction.keys()])
+    for key in diction.keys():
+        print_result += "\t" * tab + str(key)
+        if type(diction[key]) != dict and type(diction[key]) != collections.OrderedDict:
+            print_result += " " * (max_key_len - len(str(key)) + 1) + ": " + str(diction[key]) + "\n"
+        else:
+            print_result += ":" + "\n" + print_dict(diction[key], tab + 1)
+    return print_result    

@@ -11,18 +11,15 @@ import requests
 import math
 import face_recognition as fr
 
-class OPED_Painter():
-    def __init__(self, workarea, output_movie_path, material_path, \
-                    font_type_path, default_wdco, default_bgco, \
-                    opening_seconds, ending_seconds, log):
-        self.workarea = workarea
+class Painter():
+    def __init__(self, output_movie_path, log, cfg):
         self.output_movie_path = output_movie_path
-        self.material_path = material_path
-        self.font_type_path = font_type_path
-        self.opening_seconds = opening_seconds
-        self.ending_seconds = ending_seconds
-        self.default_wdco = default_wdco
-        self.default_bgco = default_bgco
+        self.seconds = 4
+        self.workarea = cfg.get_cfg("main", "workarea")
+        self.material_path = self.workarea + cfg.get_cfg("main", "material_path")
+        self.font_type_path = self.workarea + cfg.get_cfg("main", "font_type_path")
+        self.default_wdco = cfg.get_cfg("painter", "default_wdco")
+        self.default_bgco = cfg.get_cfg("painter", "default_bgco")
         self.log = log
         self.last_location = None
         self.last_vlog_convert = [None, None]
@@ -65,10 +62,13 @@ class OPED_Painter():
             self.log.log("generate_image", "illegal text file [%s], missing text" %(self.material_path + json_file))
             return []
         if "backgroundcolor" in text_info.keys():
-            background_color = text_info["backgroundcolor"]
+            bg_rgb = self.decode_color_string(text_info["backgroundcolor"])
         else:
-            background_color = self.default_bgco
-        bg_rgb = self.decode_color_string(background_color)
+            bg_rgb = self.default_bgco
+        if "seconds" in text_info.keys():
+            self.seconds = text_info["seconds"]
+        else:
+            self.seconds = 4
         bg = np.ones((height, width, 3), dtype=np.uint8)
         #rgb type
         bg[:,:,0] = bg_rgb[0]
@@ -87,10 +87,9 @@ class OPED_Painter():
             else:
                 font = self.font_type_path + content_info["font"]
             if "color" in content_info.keys():
-                textcolor = content_info["color"]
+                text_rgb = self.decode_color_string(content_info["color"])
             else:
-                textcolor = self.default_wdco
-            text_rgb = self.decode_color_string(textcolor)
+                text_rgb = self.default_wdco
             if text_rgb == None:
                 self.log.log("generate_image", "illegal rgb textcolor format %s" %(textcolor))
                 return []
@@ -109,11 +108,13 @@ class OPED_Painter():
             bg = self.paint_text(bg, content, (left_pos, top_pos), text_rgb, size, font)
         return bg
         
-    def add_opening_or_ending(self, file_sub_name, out_movie_path, image, fps, codec, width, height):
+    def add_opening_or_ending(self, file_sub_name, json_file , out_movie_path, fps, codec, width, height):
+        image = self.generate_image(json_file, width, height)
+        if image == []:
+            return None, None
         file_name = '.'.join(out_movie_path.split(".")[:-1]) + "_" + file_sub_name + "." + out_movie_path.split(".")[-1]
         output_flow = cv2.VideoWriter(file_name, codec, fps, (width, height))
-        seconds = self.opening_seconds if file_sub_name == "opening" else self.ending_seconds
-        for i in range(seconds * fps):
+        for i in range(self.seconds * fps):
             output_flow.write(image)
         output_flow.release()
         movie = VideoFileClip(file_name)

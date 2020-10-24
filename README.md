@@ -1,11 +1,13 @@
 声明:写着玩的东西,可能有不少bug  
-    人脸识别采用face_recognition开源库,感谢原作者
-    感谢python社区
+    人脸识别采用face_recognition开源库,感谢原作者  
+    face_recognition项目地址：https://github.com/ageitgey/face_recognition  
+    感谢python社区  
   
-#author: livingthings  
-#date:   2020.8.7  
+#author          : livingthings  
+#date            : 2020.8.7  
+#last update time: 2020.10.24  
 #this text is about how to build an mv of aragaki yui  
-#[Ne pas perdre espoir Cest mon seul desir]  
+#[Ne pas perdre espoir, Cest mon seul desir]  
 
 流程(人脸识别第4-5步):  
 1.  把音乐文件放入目录[./wa/music_of_gaki/]  
@@ -92,9 +94,8 @@
         [-edconf <文件名特征>] 结束片段配置文件(json格式),需要放在./wa/material目录下  
         
         
-待完善点:1.各个流程中有一些参数写死在了类里,计划后续提成配置文件  
-        2.数据库简单的用了pickle,操作不是很方便,计划后续换成sqlite  
-        3.由于使用OpenCV,剪出的片段没有声音,后续看情况完善  
-        4.有那么一点想做成windows程序,或者服务器部署,不过工作量太大,过两年再说  
-        5.爬虫爬原视频的功能已经排到明年了
+待完善点:1.数据库简单的用了pickle,操作不是很方便,计划后续换成sqlite  
+         2.由于使用OpenCV,剪出的片段没有声音,后续看情况完善  
+         3.有那么一点想做成windows程序,或者服务器部署,不过工作量太大,过两年再说  
+         4.爬虫爬原视频的功能遥遥无期了（瘫）
     

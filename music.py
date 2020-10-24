@@ -9,16 +9,14 @@ import time
 
 
 class Mus():
-    def __init__(self, log):
+    def __init__(self, log, cfg):
         self.log = log
-        self.workarea = "./wa/"
-        self.music_path = self.workarea + "music_of_gaki/"
-        self.music_beat_path = self.workarea + "music_beat_of_gaki/"
-        self.music_database = self.workarea + "mus_db.pkl"
+        self.workarea = cfg.get_cfg("main", "workarea")
+        self.music_path = self.workarea + cfg.get_cfg("listen", "music_path")
+        self.music_beat_path = self.workarea + cfg.get_cfg("listen", "music_beat_path")
+        self.music_database = self.workarea + cfg.get_cfg("listen", "music_database")
         #{music_name : {beats, beat_delta, duration}}
         self.mus_db = None
-        self.beat_speed = 30
-        self.beat_detect_mode = "auto"
     
     def counter_delta_times(self, delta, limit):
         counter = dict()
@@ -233,7 +231,7 @@ class Mus():
                 oldtime = time.time()
         return beats, sum(beats)/len(beats)
         
-    def check_new_mus(self, rescan):
+    def check_new_mus(self, rescan, beat_detect_mode):
         if os.path.exists(self.music_path) == False:
             os.mkdir(self.music_path)
             self.log.log("check_new_mus", "folder %s not exists, created automatically, this may be your first time running this program, please try to find some music and put them into folder %s" %(self.music_path,self.music_path))
@@ -249,7 +247,7 @@ class Mus():
                 self.log.log("check_new_mus", "processing music file [%s]" %(file))
                 file = self.convert_mus_type(self.music_path+file)
                 self.mus_db[file] = dict()
-                if self.beat_detect_mode == "auto":
+                if beat_detect_mode == "auto":
                     if file in os.listdir(self.music_beat_path):
                         self.log.log("check_new_mus", "found beat file, using it for beat tracking")
                         beat_file = self.music_beat_path+file
@@ -258,7 +256,9 @@ class Mus():
                         beat_file = self.music_path+file
                     y, sr = librosa.load(self.music_path+file)
                     self.mus_db[file]["duration"] = self.get_music_duration(y, sr)
-                    self.mus_db[file]["beats"], self.mus_db[file]["beat_delta"] = self.get_music_beats(y, sr)
+                    self.mus_db[file]["beats"] = [3.904,7.527,11.154,14.744,18.393,21.927,25.561,29.238,30.964,32.807,34.581,36.398,38.197,40.008,41.795,43.584,45.357,47.253,49.021,50.846,52.636,54.46,56.241,58.3,59.763,61.66,63.431,65.244,67.07,68.892,70.685,72.486,76.116,79.799,83.353,86.899,90.537,94.116,97.732,101.34,104.957,108.579,112.182,115.81,117.616,119.419,121.23,123.013,124.817,126.65,128.37,130.194,132.047,133.836,135.669,137.46,139.258,141.03,142.84,144.716,148.336,151.914,155.526,159.13,162.7,166.293,169.941,173.554,177.188,180.794,184.418,188.036,191.63,195.21,198.811,202.484,208.309,212.753]
+                    self.mus_db[file]["beat_delta"] = 7.527 - 3.904
+                    #self.mus_db[file]["beats"], self.mus_db[file]["beat_delta"] = self.get_music_beats(y, sr)
                 else:
                     y, sr = librosa.load(self.music_path+file)
                     self.mus_db[file]["duration"] = self.get_music_duration(y, sr)
@@ -274,9 +274,9 @@ class Mus():
             self.log.log("check_new_mus", "successfully loaded %d songs" %(len(new_file)))
             self.log.log("check_new_mus", "they are [" + " ".join(new_file) + "]")
         
-    def find_music(self, rescan):
+    def find_music(self, rescan, beat_detect_mode):
         self.init_music_database()
-        self.check_new_mus(rescan)
+        self.check_new_mus(rescan, beat_detect_mode)
         self.save_music_database()
         
     def get_random_music(self):

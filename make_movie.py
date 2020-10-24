@@ -4,38 +4,30 @@ from moviepy.audio.fx import *
 from utils import *
 import cv2
 import numpy as np
-from painter import OPED_Painter
+from painter import Painter
 import math
 
 class Mov():
-    def __init__(self, log, rec, mus):
+    def __init__(self, log, rec, mus, cfg):
         self.log = log
         self.rec = rec
         self.mus = mus
-        self.workarea = "./wa/"
-        self.output_movie_path = self.workarea + "output_movie/"
-        self.material_path = self.workarea + "material/"
-        self.font_type_path = self.workarea + "material/font/"
-        self.opening_seconds = 6
-        self.ending_seconds = 4
-        self.default_wdco = "[255,255,255]"
-        self.default_bgco = "[0,0,0]"
-        self.default_output_fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        self.default_moviepy_codec = None
-        self.default_output_suffix = '.mp4'
-        self.default_output_fps = 30
-        self.painter = OPED_Painter(self.workarea, self.output_movie_path, self.material_path, \
-                                    self.font_type_path, self.default_wdco, self.default_bgco, \
-                                    self.opening_seconds, self.ending_seconds, self.log)
-        self.all_mode = False
-        self.no_repeat = True
-        self.combine_mode = "follow"
-        self.face_effect_list = ["ghost"]
-        self.convert_effect_list = ["vlog"]
-        self.screen_effect_list = ["broadcast"]
+        self.workarea = cfg.get_cfg("main", "workarea")
+        self.output_movie_path = self.workarea + cfg.get_cfg("movie", "output_movie_path")
+        self.default_output_fourcc = cfg.get_cfg("movie", "default_output_fourcc")
+        self.default_moviepy_codec = cfg.get_cfg("movie", "default_moviepy_codec")
+        self.default_output_suffix = cfg.get_cfg("movie", "default_output_suffix")
+        self.default_output_fps = cfg.get_cfg("movie", "default_output_fps")
+        self.face_effect_list = cfg.get_cfg("movie", "face_effect_list")
+        self.convert_effect_list = cfg.get_cfg("movie", "convert_effect_list")
+        self.screen_effect_list = cfg.get_cfg("movie", "screen_effect_list")
+        self.painter = Painter(self.output_movie_path, log, cfg)
         self.face_effect = "None"
         self.screen_effect = "None"
         self.convert_effect = "None"
+        self.combine_mode = "follow"
+        self.all_mode = False
+        self.no_repeat = True
         
     def get_music(self, song_names):
         selected_music_file = []
@@ -583,18 +575,7 @@ class Mov():
         
     def make(self, commands, music_file_list, music_info_list, beats, slices_list):
         movie_file = self.output_movie_path + commands["title"] + self.default_output_suffix
-        if commands["music-only"] == True:
-            width, height = 1024,768
-            image = self.painter.generate_image(commands["music-bg"], width, height)
-            if image == []:
-                return
-            length = 0
-            for info in music_info_list:
-                length += info["duration"]
-            self.painter.ending_seconds = math.ceil(length)
-            _, movie_file = self.painter.add_opening_or_ending("", movie_file, image, self.default_output_fps, self.default_output_fourcc, width, height)
-            self.painter.ending_seconds = self.ending_seconds
-        elif commands["beat-mode"] == True:
+        if commands["beat-mode"] == True:
             width, height = self.combine_slices_with_beats(beats, slices_list, movie_file, commands["time"], float(commands["caption-height"]))
         else:
             width, height = self.combine_slices_without_beats(slices_list, commands["slice-size"], movie_file, commands["time"], float(commands["caption-height"]))
@@ -607,24 +588,21 @@ class Mov():
         full_movie = []
         make_opening = False
         make_ending = False
-        if commands["opconf"] != None or commands["edconf"] != None:
-            if commands["opconf"] != None:
-                make_opening = True
-                image = self.painter.generate_image(commands["opconf"], width, height)
-                if image == []:
-                    return
-                opening_movie, opening_file_name = self.painter.add_opening_or_ending("opening", out_movie_path, image, self.default_output_fps, self.default_output_fourcc, width, height)
+        if commands["opconf"] != None:
+            opening_movie, opening_file_name = self.painter.add_opening_or_ending("opening", commands["opconf"], out_movie_path, self.default_output_fps, self.default_output_fourcc, width, height)
+            if opening_movie == None:
+                self.log.log("make", "generate opening failed")
+            else:
                 full_movie.append(opening_movie)
-            full_movie.append(out_movie)
-            if commands["edconf"] != None:
-                make_ending = True
-                image = self.painter.generate_image(commands["edconf"], width, height)
-                if image == []:
-                    return
-                ending_movie, ending_file_name = self.painter.add_opening_or_ending("ending", out_movie_path, image, self.default_output_fps, self.default_output_fourcc, width, height)
+                make_opening = True
+        full_movie.append(out_movie)
+        if commands["edconf"] != None:
+            ending_movie, ending_file_name = self.painter.add_opening_or_ending("ending", commands["edconf"], out_movie_path, self.default_output_fps, self.default_output_fourcc, width, height)
+            if ending_movie == None:
+                self.log.log("make", "generate ending failed")
+            else:
                 full_movie.append(ending_movie)
-        else:
-            full_movie.append(out_movie)
+                make_ending = True
         if len(full_movie) > 1:
             final_movie = concatenate_videoclips(full_movie, method='compose')
         else:
@@ -705,7 +683,7 @@ class Mov():
         return slices_list
        
     def make_aragaki_movie(self, commands):
-        self.log.log("make_aragaki_movie", "your commands are: %s" %(str(commands)))
+        self.log.log("make_aragaki_movie", "your commands are:\n%s" %(print_dict(commands)))
         music_file, music_info, total_length = self.get_music(commands["music"])
         if music_info == []:
             return

@@ -9,17 +9,17 @@ from any2jpg import any2jpg
 import shutil
 
 class RecExp():
-    def __init__(self, log):
+    def __init__(self, log, cfg):
         self.log = log
-        self.workarea = "./wa/"
-        self.train_folder = self.workarea + "exp_train/"
+        self.workarea = cfg.get_cfg("main", "workarea")
+        self.train_folder = self.workarea + cfg.get_cfg("recexp", "train_folder")
         #data_db = {file_name : {gray, label}}
         self.data_db = None
-        self.data_db_path = self.workarea + "training_data.pkl"
+        self.data_db_path = self.workarea + cfg.get_cfg("recexp", "data_db_path")
         self.recognizer = None
-        self.recognizer_db_path = self.workarea + "recognizer.yml"
-        self.label_define = ("default", "happy", "blue", "normal")
-        self.predict_sample = 10
+        self.recognizer_db_path = self.workarea + cfg.get_cfg("recexp", "recognizer_db_path")
+        self.label_define = cfg.get_cfg("recexp", "label_define")
+        self.predict_sample = cfg.get_cfg("recexp", "predict_sample")
         
     def detect_face(self, img_file):
         image = fr.load_image_file(img_file)

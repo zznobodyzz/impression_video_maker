@@ -7,16 +7,20 @@ from rec_express import RecExp
 from music import Mus
 from make_movie import Mov
 from make_album import Alb
-from painter import OPED_Painter
+from painter import Painter
 #from catch_aragaki import Cat
+from config import CfgDecoder
 
+Cfg = CfgDecoder()
 log = Log()
-recexp = RecExp(log)
-rec = Rec(log, recexp)
-mus = Mus(log)
-mov = Mov(log, rec, mus)
-alb = Alb(log, recexp, mus)
+recexp = RecExp(log, Cfg)
+rec = Rec(log, recexp, Cfg)
+mus = Mus(log, Cfg)
+mov = Mov(log, rec, mus, Cfg)
+alb = Alb(log, recexp, mus, Cfg)
 #cat = Cat()
+
+
 
 def print_help():
     print("usage:\n" \
@@ -96,7 +100,10 @@ def print_help():
                 "\t                          [-time     <length_in_seconds_of_mv>] --- after beat-mode\n" \
                 "\t--test        ---     some commands for test\n" \
                 "\t                      the params are as follows:\n" \
-                "\t                          [-test-json <a_json_file_name>] --- test an op or ed json file's effect\n")
+                "\t                          [-test-oped <a_json_file_name>] --- test an op or ed json file's effect\n" \
+                "\t                          [-test-lrc <a_json_file_name>] --- test an lrc json file's effect\n" \
+                "\t                          [-width <pixel>] --- test window's width\n" \
+                "\t                          [-height <pixel>] --- test window's height\n")
 
 def get_make_mv_random_commands():
     result = dict()
@@ -109,8 +116,6 @@ def get_make_mv_random_commands():
     if time < 10:
         log.log("get_make_mv_random_commands", "not enough slices to choose, please input slices first, at least 10 seconds please(with command --recognize)")
         return None
-    painter = OPED_Painter("./wa/", "./wa/output_movie/", "./wa/material/", "./wa/material/font/", "[255,255,255]", \
-                            "[0,0,0]", 6, 4, log)
     result["time"] = 0
     result["title"] = "for_aragaki_mv"
     result["opconf"] = None
@@ -152,8 +157,7 @@ def get_make_album_random_commands():
     result["interval"] = 5
     result["title"] = "for_aragaki_album"
     result["feature"] = ""
-    painter = OPED_Painter("./wa/", "./wa/output_movie/", "./wa/material/", "./wa/material/font/", "[255,255,255]", \
-                            "[0,0,0]", 6, 4, log)
+    painter = Painter("./wa/output_movie/", log, Cfg)
     result["opconf"] = None
     result["edconf"] = None
     result["allow-repeat"] = False
@@ -313,13 +317,9 @@ def execute_recognize_commands(argvs):
     exit()
     
 def execute_listen_commands(argvs):
-    if '-beat-speed' in argvs:
-        beat_speed = get_argv(argvs, argvs.index("-beat-speed"), 30)
-        mus.beat_speed = beat_speed
-    if '-manual-beat' in argvs:
-        mus.beat_detect_mode = "manual"
     rescan = True if "-rescan" in argvs else False
-    mus.find_music(rescan)
+    beat_detect_mode = "manual" if '-manual-beat' in argvs else "auto"
+    mus.find_music(rescan, beat_detect_mode)
     exit()
     
 def execute_train_commands(argvs):
@@ -421,8 +421,7 @@ def execute_test_commands(argvs):
         file_name = get_argv(argvs, argvs.index("-test-oped"), None)
         if file_name == None:
             exit()
-        painter = OPED_Painter("./wa/", "./wa/output_movie/", "./wa/material/", "./wa/material/font/", "[255,255,255]", \
-                        "[0,0,0]", 6, 4, log)
+        painter = Painter("", log, Cfg)
         graph = painter.generate_image(file_name, width, height)
         if graph != []:
             show_image("test-oped", graph)
@@ -431,8 +430,7 @@ def execute_test_commands(argvs):
         file_name = get_argv(argvs, argvs.index("-test-lrc"), None)
         if file_name == None:
             exit()
-        painter = OPED_Painter("./wa/", "./wa/output_movie/", "./wa/material/", "./wa/material/font/", "[255,255,255]", \
-                        "[0,0,0]", 6, 4, log)
+        painter = Painter("", log, Cfg)
         lrc_info = painter.get_lrc_json(file_name)
         if lrc_info == None:
             exit()

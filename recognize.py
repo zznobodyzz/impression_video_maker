@@ -7,16 +7,16 @@ import traceback
 from any2jpg import any2jpg
     
 class Rec():
-    def __init__(self, log, recexp):
+    def __init__(self, log, recexp, cfg):
         self.recexp = recexp
-        self.workarea = "./wa/"
+        self.workarea = cfg.get_cfg("main", "workarea")
         self.log = log
-        self.picture_path = self.workarea + "pic_of_gaki/"
-        self.picture_database = self.workarea + "pic_db.pkl"
-        self.video_path = self.workarea + "video_of_gaki/"
-        self.video_database = self.workarea + "video_db.pkl"
-        self.slice_path = self.workarea + "slice_video/"
-        self.slice_database = self.workarea + "slice_db.pkl"
+        self.picture_path = self.workarea + cfg.get_cfg("rec", "picture_path")
+        self.picture_database = self.workarea + cfg.get_cfg("rec", "picture_database")
+        self.video_path = self.workarea + cfg.get_cfg("rec", "video_path")
+        self.video_database = self.workarea + cfg.get_cfg("rec", "video_database")
+        self.slice_path = self.workarea + cfg.get_cfg("rec", "slice_path")
+        self.slice_database = self.workarea + cfg.get_cfg("rec", "slice_database")
         #pic_db [[image name,image face encodings]]
         self.pic_db = None
         #video_db {video name : {total_length, height, width, fps, fourcc, schedule}}
@@ -24,9 +24,9 @@ class Rec():
         self.old_video_db = None
         #slice_db {slice_path: {slice_name : {express, length, height, width, fps, fourcc}}}
         self.slice_db = None
-        self.default_scene_confidence = 15
-        self.default_face_confidence = 0.45
-        self.detect_mode = 'cnn'
+        self.default_scene_confidence = cfg.get_cfg("rec", "default_scene_confidence")
+        self.default_face_confidence = cfg.get_cfg("rec", "default_face_confidence")
+        self.detect_mode = cfg.get_cfg("rec", "detect_mode")
         if os.path.exists(self.workarea) == False:
             os.mkdir(self.workarea)
         
@@ -740,7 +740,7 @@ class Rec():
                 exit()
 
     def recognize_aragaki(self, commands):
-        self.log.log("recognize_aragaki", "your commands are %s" %(str(commands)))
+        self.log.log("recognize_aragaki", "your commands are:\n%s" %(print_dict(commands)))
         self.init_picture_database()
         self.init_video_database()
         self.init_slice_database(commands["slice-path"])

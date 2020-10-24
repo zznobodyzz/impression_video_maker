@@ -12,7 +12,6 @@ def ncm2mp3(ncm_file_path, mp3_file_path):
     unpad = lambda s : s[0:-(s[-1] if type(s[-1]) == int else ord(s[-1]))]
     f = open(ncm_file_path,'rb')
     header = f.read(8)
-    assert binascii.b2a_hex(header) == b'4354454e4644414d'
     f.seek(2, 1)
     key_length = f.read(4)
     key_length = struct.unpack('<I', bytes(key_length))[0]

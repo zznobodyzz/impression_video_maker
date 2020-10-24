@@ -3,33 +3,26 @@ from moviepy.editor import *
 from moviepy.audio.fx import *
 from utils import *
 import cv2
-from painter import OPED_Painter
+from painter import Painter
 from any2jpg import any2jpg
 import numpy as np
 import math
 
 class Alb():
-    def __init__(self, log, recexp, mus):
+    def __init__(self, log, recexp, mus, cfg):
         self.log = log
         self.mus = mus
         self.recexp = recexp
-        self.workarea = "./wa/"
-        self.output_movie_path = self.workarea + "output_movie/"
-        self.material_path = self.workarea + "material/"
-        self.font_type_path = self.workarea + "material/font/"
-        self.default_album_path = self.workarea + "album_of_gaki/"
-        self.picture_database = self.workarea + "album_db.pkl"
-        self.opening_seconds = 4
-        self.ending_seconds = 3
-        self.default_wdco = "[255,255,255]"
-        self.default_bgco = "[0,0,0]"
-        self.default_album_bg_co = tuple([255,255,255])
-        self.default_enlarge_limit = 0.75
+        self.workarea = cfg.get_cfg("main", "workarea")
+        self.output_movie_path = self.workarea + cfg.get_cfg("album", "output_movie_path")
+        self.material_path = self.workarea + cfg.get_cfg("main", "material_path")
+        self.default_album_path = self.workarea + cfg.get_cfg("album", "default_album_path")
+        self.picture_database = self.workarea + cfg.get_cfg("album", "picture_database")
+        self.default_album_bg_co = cfg.get_cfg("album", "default_album_bg_co")
+        self.default_enlarge_limit = cfg.get_cfg("album", "default_enlarge_limit")
         self.pic_db = None
-        self.painter = OPED_Painter(self.workarea, self.output_movie_path, self.material_path, \
-                                    self.font_type_path, self.default_wdco, self.default_bgco, \
-                                    self.opening_seconds, self.ending_seconds, self.log)
-        self.trans_mode_list = ("random", "topin", "bottomin", "leftin", "rightin", "fade")
+        self.painter = Painter(self.output_movie_path, log, cfg)
+        self.trans_mode_list = cfg.get_cfg("album", "trans_mode_list")
         
     def init_picture_database(self):
         if self.pic_db != None:
@@ -522,21 +515,21 @@ class Alb():
         full_movie = []
         make_opening = False
         make_ending = False
-        if commands["opwd"] != None or commands["opgr"] != None:
+        if commands["opconf"] != None:
             make_opening = True
-            image = self.painter.generate_image(commands["opconf"], width, height)
-            if image == []:
-                return
-            opening_movie, opening_file_name = self.painter.add_opening_or_ending("opening", out_movie_path, image, fps, codec, width, height)
-            full_movie.append(opening_movie)
+            opening_movie, opening_file_name = self.painter.add_opening_or_ending("opening", commands["opconf"], out_movie_path, self.default_output_fps, self.default_output_fourcc, width, height)
+            if opening_movie == None:
+                self.log.log("make", "generate opening failed")
+            else:
+                full_movie.append(opening_movie)
         full_movie.append(out_movie)
-        if commands["edwd"] != None or commands["edgr"] != None:
+        if commands["edconf"] != None:
             make_ending = True
-            image = self.painter.generate_image(commands["edconf"], width, height)
-            if image == []:
-                return
-            ending_movie, ending_file_name = self.painter.add_opening_or_ending("ending", out_movie_path, image, fps, codec, width, height)
-            full_movie.append(ending_movie)
+            ending_movie, ending_file_name = self.painter.add_opening_or_ending("ending", commands["edconf"], out_movie_path, self.default_output_fps, self.default_output_fourcc, width, height)
+            if ending_movie == None:
+                self.log.log("make", "generate ending failed")
+            else:
+                full_movie.append(ending_movie)
         final_movie = concatenate_videoclips(full_movie, method='compose')
         final_path = '.'.join(out_movie_path.split('.')[:-1]) + \
                         ('_op' if make_opening == True else '') + \
@@ -551,6 +544,7 @@ class Alb():
         os.remove(out_movie_path)
         
     def make_aragaki_album(self, commands):
+        self.log.log("make_aragaki_album", "your commands are:\n%s" %(print_dict(commands)))
         self.init_picture_database()
         music_file_list = []
         music_info_list = []
