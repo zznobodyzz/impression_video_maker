@@ -1,3 +1,4 @@
+# -*- coding: UTF-8 -*-
 import os
 from utils import *
 import face_recognition as fr
@@ -5,6 +6,10 @@ import cv2
 import copy
 import traceback
 from any2jpg import any2jpg
+from moviepy.editor import *
+from moviepy.audio.fx import *
+import moviepy.config_defaults as moviepy_config
+import subprocess
     
 class Rec():
     def __init__(self, log, recexp, cfg):
@@ -27,6 +32,17 @@ class Rec():
         self.default_scene_confidence = cfg.get_cfg("rec", "default_scene_confidence")
         self.default_face_confidence = cfg.get_cfg("rec", "default_face_confidence")
         self.detect_mode = cfg.get_cfg("rec", "detect_mode")
+        self.keep_audio = cfg.get_cfg("rec", "keep_audio")
+        self.ffmpeg_exe = cfg.get_cfg("main", "ffmpeg_path") + "ffmpeg.exe"
+        if os.path.exists(self.ffmpeg_exe) == False:
+            from imageio.plugins.ffmpeg import get_exe
+            moviepy_config.FFMPEG_BINARY = get_exe()
+            self.ffmpeg_exe = moviepy_config.FFMPEG_BINARY
+        else:
+            moviepy_config.FFMPEG_BINARY = self.ffmpeg_exe
+        print(moviepy_config.FFMPEG_BINARY)
+        print(self.ffmpeg_exe)
+        self.current_video = None
         if os.path.exists(self.workarea) == False:
             os.mkdir(self.workarea)
         
@@ -302,38 +318,48 @@ class Rec():
         self.log.log("sync_slice_info", "sync_slice_info done")
         
     def open_slice_video(self, flow_file, origin_video_info, start_second, face_location):
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
         file_name = flow_file.split('/')[-1]
         file_name = '.'.join(file_name.split('.')[:-1])
+        if self.keep_audio != "no":
+            suffix = '.' + flow_file.split('.')[-1]
+            fourcc = origin_video_info["fourcc"]
+        else:
+            suffix = ".avi"
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
         slice_file_name = self.slice_path+file_name+'_'+str(start_second)+"s"
-        if os.path.exists(slice_file_name + '.avi') == True:
+        if os.path.exists(slice_file_name + suffix) == True:
             i = 1
             while True:
                 slice_file_name += '_' + str(i)
-                if os.path.exists(slice_file_name + '.avi') == False:
+                if os.path.exists(slice_file_name + suffix) == False:
                     break
                 slice_file_name = slice_file_name[:len(slice_file_name) - len(str(i)) - 1]
                 i += 1
-        slice_file_name += '.avi'
-        self.log.log("open_slice_video", "the current slice video is [%s]" %(slice_file_name))
-        slice_flow = cv2.VideoWriter(slice_file_name, fourcc, origin_video_info["fps"], (origin_video_info["width"],origin_video_info["height"]))
+        slice_file_name += suffix
+        if self.keep_audio != "no":
+            slice_flow = {"fps":origin_video_info["fps"], "file_name":slice_file_name}
+        else:
+            slice_flow = cv2.VideoWriter(slice_file_name, fourcc, origin_video_info["fps"], (origin_video_info["width"],origin_video_info["height"]))
         self.slice_db[self.slice_path][slice_file_name] = dict()
+        self.slice_db[self.slice_path][slice_file_name]["fourcc"] = fourcc
         self.slice_db[self.slice_path][slice_file_name]["length"] = 0
         self.slice_db[self.slice_path][slice_file_name]["width"] = origin_video_info["width"]
         self.slice_db[self.slice_path][slice_file_name]["height"] = origin_video_info["height"]
         self.slice_db[self.slice_path][slice_file_name]["fps"] = origin_video_info["fps"]
-        self.slice_db[self.slice_path][slice_file_name]["fourcc"] = fourcc
         self.slice_db[self.slice_path][slice_file_name]["face_percent"] = (face_location[3] - face_location[1])/origin_video_info["width"]
+        self.log.log("open_slice_video", "the current slice video is [%s]" %(slice_file_name))
         return slice_flow, slice_file_name
         
     def close_slice_video(self, slice_flow, file_path):
         if slice_flow == None:
             return
-        slice_flow.release()
-        slice_flow = cv2.VideoCapture(file_path)
-        self.slice_db[self.slice_path][file_path]["length"] = int(slice_flow.get(cv2.CAP_PROP_FRAME_COUNT))
+        if type(slice_flow) == cv2.VideoWriter:
+            slice_flow.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        else:
+            slice_flow = cv2.VideoCapture(file_path)
         #self.slice_db[self.slice_path][file_path]["express"] = self.recexp.predict_flow(slice_flow, self.slice_db[file_path]["length"])
         self.slice_db[self.slice_path][file_path]["express"] = "default"
+        self.slice_db[self.slice_path][file_path]["length"] = int(slice_flow.get(cv2.CAP_PROP_FRAME_COUNT))
         slice_flow.release()
         self.save_slice_database()
         
@@ -403,11 +429,36 @@ class Rec():
             rgb_frame.append(frame[:, :, ::-1])
         return rgb_frame
         
-    def write_slice_video(self, frames, slice_flow):
-        if slice_flow == None:
-            return
-        for frame in frames:
-            slice_flow.write(frame)
+    def fast_video_cut(self, video_name, slice_name, start_time, end_time):
+        cmd = [self.ffmpeg_exe, 
+                "-hwaccel", "cuvid", 
+                "-ss", str(start_time), 
+                "-i", video_name, 
+                "-vcodec", "copy", 
+                "-acodec", "copy", 
+                "-t", str(end_time - start_time), 
+                slice_name]
+        popen_params = {"stdout": subprocess.PIPE}
+        if os.name == "nt":
+            popen_params["creationflags"] = 0x08000000
+        proc = subprocess.Popen(cmd, **popen_params)
+        return
+        
+    def write_slice_video(self, frames, slice_flow, start_index):
+        if type(slice_flow) == cv2.VideoWriter:
+            for frame in frames:
+                slice_flow.write(frame)
+        elif type(slice_flow) == dict:
+            #keep audio mode
+            start_time = round(start_index / slice_flow["fps"], 2)
+            end_time = round((start_index + len(frames))/ slice_flow["fps"])
+            if self.keep_audio == "fast":
+                self.fast_video_cut(self.current_video, slice_flow["file_name"], start_time, end_time)
+            else:
+                video_clip = VideoFileClip(self.current_video)
+                video_clip = video_clip.subclip(start_time, end_time)
+                video_clip.write_videofile(slice_flow["file_name"], logger = None)
+        return
         
     def process_frame(self, frames):
         #rgb <-> bgr
@@ -455,7 +506,6 @@ class Rec():
         now_schedule = 0
         current_slice_flow = None
         flow_path = ""
-        flow = None
         index = 0
         batch_size = 0
         face_hit_num = [0] * len(self.pic_db)
@@ -470,11 +520,12 @@ class Rec():
                 batch_size = min_second * info["fps"]
                 match_num = 0
                 flow = cv2.VideoCapture(flow_file)
+                self.current_video = flow_file
                 is_done = False
                 if info["schedule"] != 0:
                     start_index = int(info["schedule"]/100 * info["length"])
                     flow.set(cv2.CAP_PROP_POS_FRAMES, int(info["schedule"]/100 * info["length"]))
-                    self.log.log("start_fuzzy_job", "continue with schedule %d\n" %(info["schedule"]))
+                    self.log.log("start_fuzzy_job", "continue with schedule %d%%\n" %(info["schedule"]))
                 else:
                     start_index = 0
                 last_success_frame = []
@@ -525,7 +576,7 @@ class Rec():
                             write_frame_nums = 0
                         last_success_frame = frames[-1]
                         last_success_frame_index = index * batch_size + len(frames) - 1
-                        self.write_slice_video(final_frames, current_slice_flow)
+                        self.write_slice_video(final_frames, current_slice_flow, index * batch_size)
                         write_frame_nums += len(final_frames)
                         match_num += batch_size
                     now_schedule = index*batch_size*100//info["length"]
@@ -547,7 +598,7 @@ class Rec():
                             face_match, _ = self.compare_face(frames[-1], face_locations, info["width"], info["height"], face_hit_num, self.default_face_confidence)
                             if face_match == True:
                                 final_frame = self.process_frame(frames)
-                                self.write_slice_video(final_frames, current_slice_flow)
+                                self.write_slice_video(final_frames, current_slice_flow, info["length"]//batch_size*batch_size)
                                 match_num += info["length"]%batch_size
                 self.log.log("start_fuzzy_job", "schedule: 100%")
                 self.log.log("start_fuzzy_job", "finish processing video [%s]" %(flow_file))
@@ -569,7 +620,6 @@ class Rec():
         now_schedule = 0
         last_schedule = 0
         current_slice_flow = None
-        flow = None
         index = 0
         flow_path = ""
         face_hit_num = [0] * len(self.pic_db)
@@ -582,12 +632,14 @@ class Rec():
                 write_frame_nums = 0
                 match_num = 0
                 flow = cv2.VideoCapture(flow_file)
+                self.current_video = flow_file
                 if info["schedule"] != 0:
                     flow.set(cv2.CAP_PROP_POS_FRAMES, info["length"]*100//info["schedule"])
-                    self.log.log("start_exact_job", "continue with schedule %d\n" %(info["schedule"]))
+                    self.log.log("start_exact_job", "continue with schedule %d%%\n" %(info["schedule"]))
                 last_success_frame = []
                 last_success_frame_index = -1
                 #batch
+                sample_rate = sample_rate * info["fps"]
                 for index in range(0, info["length"]//sample_rate):
                     frames = self.load_frame(flow, sample_rate)
                     #if the first frame matched, check the last frame
@@ -607,7 +659,7 @@ class Rec():
                             write_frame_nums = 0
                         last_success_frame = frames[-1]
                         last_success_frame_index = index + len(frames) - 1
-                        self.write_slice_video(final_frames, current_slice_flow)
+                        self.write_slice_video(final_frames, current_slice_flow, index * sample_rate)
                         write_frame_nums += len(final_frames)
                         match_num += 1
                     now_schedule = index*100//info["length"]
@@ -635,7 +687,6 @@ class Rec():
                 
     def start_scene_job(self, mode, sample_rate):
         current_slice_flow = None
-        flow = None
         index = 0
         flow_path = ""
         face_hit_num = [0] * len(self.pic_db)
@@ -650,9 +701,10 @@ class Rec():
                 write_frame_nums = 0
                 match_num = 0
                 flow = cv2.VideoCapture(flow_file)
+                self.current_video = flow_file
                 if info["schedule"] != 0:
                     flow.set(cv2.CAP_PROP_POS_FRAMES, info["length"]*info["schedule"]//100)
-                    self.log.log("start_scene_job", "continue with schedule %d\n" %(info["schedule"]))
+                    self.log.log("start_scene_job", "continue with schedule %d%%\n" %(info["schedule"]))
                     seconds = info["length"]*info["schedule"]//100//info["fps"]
                 else:
                     seconds = 0
@@ -679,6 +731,15 @@ class Rec():
                                 ahead_append_nums += 1
                                 last_success_frame = frames[i]
                             else:
+                                '''
+                                face_locations = fr.face_locations(frames[i], model=self.detect_mode)
+                                face_match, _ = self.compare_face(frames[i], face_locations, info["width"], info["height"], face_hit_num, self.default_face_confidence)
+                                if face_match == True:
+                                    need_write.append(frames[i])
+                                    ahead_append_nums += 1
+                                    last_success_frame = frames[i]
+                                    continue
+                                '''
                                 done = True
                                 break
                         if done != True:
@@ -691,19 +752,39 @@ class Rec():
                                     ahead_append_nums += 1
                                     last_success_frame = frames[0]
                                 else:
+                                    '''
+                                    face_locations = fr.face_locations(frames[0], model=self.detect_mode)
+                                    face_match, _ = self.compare_face(frames[0], face_locations, info["width"], info["height"], face_hit_num, self.default_face_confidence)
+                                    if face_match == True:
+                                        need_write.append(frames[0])
+                                        ahead_append_nums += 1
+                                        last_success_frame = frames[0]
+                                        continue
+                                    '''
                                     break
                         #look before for same scene
                         last_success_frame = current_frame
                         done = False
                         seconds_tmp = seconds
+                        behind_append_nums = 0
                         while seconds_tmp != 0:
                             flow.set(cv2.CAP_PROP_POS_FRAMES, (seconds_tmp - 1)* info["fps"])
                             frames = self.load_frame(flow, info["fps"])
                             for j in range(len(frames)-1, -1, -1):
                                 if self.compare_scene(last_success_frame, frames[j], self.default_scene_confidence) == True:
                                     need_write.insert(0, frames[j])
+                                    behind_append_nums += 1
                                     last_success_frame = frames[j]
                                 else:
+                                    '''
+                                    face_locations = fr.face_locations(frames[j], model=self.detect_mode)
+                                    face_match, _ = self.compare_face(frames[j], face_locations, info["width"], info["height"], face_hit_num, self.default_face_confidence)
+                                    if face_match == True:
+                                        need_write.insert(0, frames[j])
+                                        behind_append_nums += 1
+                                        last_success_frame = frames[j]
+                                        continue
+                                    '''
                                     done = True
                                     break
                             if done == True:
@@ -711,7 +792,7 @@ class Rec():
                             seconds_tmp -= 1
                         final_frames = self.process_frame(need_write)
                         current_slice_flow, flow_path = self.open_slice_video(flow_file, info, seconds, face_locations[0])
-                        self.write_slice_video(final_frames, current_slice_flow)
+                        self.write_slice_video(final_frames, current_slice_flow, seconds * info["fps"] - behind_append_nums)
                         self.close_slice_video(current_slice_flow, flow_path)
                         seconds = (seconds+(ahead_append_nums+1)//info["fps"]+1)
                         flow.set(cv2.CAP_PROP_POS_FRAMES, seconds*info["fps"])

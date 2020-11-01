@@ -54,7 +54,7 @@ class Mov():
         
     def pick_slice(self, commands, min_size, max_size):
         if self.rec.slice_db == None:
-            self.rec.init_slice_database(commands['path'])
+            self.rec.init_slice_database(commands['slice-path'])
         express_slices = []
         for slice, slice_info in self.rec.slice_db[self.rec.slice_path].items():
             if (slice_info["express"] == commands["express"] or commands["express"] == "default") and \
@@ -611,12 +611,15 @@ class Mov():
                         ('_op' if make_opening == True else '') + \
                         ('_ed' if make_ending == True else '') + \
                         '.' + out_movie_path.split('.')[-1]
-        final_movie.write_videofile(final_path, codec = self.default_moviepy_codec)
+        self.log.log("make", "generating final output file, please wait..")
+        final_movie.write_videofile(final_path, codec = self.default_moviepy_codec, logger = None)
+        final_movie.close()
         if make_opening == True:
             os.remove(opening_file_name)
         if make_ending == True:
             os.remove(ending_file_name)
         os.remove(movie_file)
+        self.log.log("make", "generating final output file done")
         
     def preprocess_music(self, commands, music_info):
         beats = []
@@ -732,12 +735,12 @@ class Mov():
                 ret, frame = slice_flow.read()
                 if ret == False:
                     break
-                if self.rec.compare_scene(frame, last_frame, 15) == True:
+                if self.rec.compare_scene(frame, last_frame, 20) == True:
                     write_frame_nums += 1
                 elif write_frame_nums != 0:
                     new_slice_info = copy.deepcopy(slice[1])
                     new_slice_info["length"] = write_frame_nums
-                    self.rec.update_slice_db(output_tmp_file, new_slice_info, commands['path'], predict = True)
+                    self.rec.update_slice_db(output_tmp_file, new_slice_info, commands['slice-path'], predict = True)
                     output_flow.release()
                     sub_slice_num += 1
                     write_frame_nums = 0
