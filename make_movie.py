@@ -22,6 +22,13 @@ class Mov():
         self.convert_effect_list = cfg.get_cfg("movie", "convert_effect_list")
         self.screen_effect_list = cfg.get_cfg("movie", "screen_effect_list")
         self.painter = Painter(self.output_movie_path, log, cfg)
+        self.ffmpeg_exe = cfg.get_cfg("main", "ffmpeg_path") + "ffmpeg.exe"
+        if os.path.exists(self.ffmpeg_exe) == False:
+            from imageio.plugins.ffmpeg import get_exe
+            self.ffmpeg_exe = get_exe()
+        else:
+            moviepy_config.change_settings({"FFMPEG_BINARY":self.ffmpeg_exe})
+        self.log.log("Mov init", "will use ffmpeg: %s" %(self.ffmpeg_exe))
         self.face_effect = "None"
         self.screen_effect = "None"
         self.convert_effect = "None"

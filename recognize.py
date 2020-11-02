@@ -8,7 +8,7 @@ import traceback
 from any2jpg import any2jpg
 from moviepy.editor import *
 from moviepy.audio.fx import *
-import moviepy.config_defaults as moviepy_config
+import moviepy.config as moviepy_config
 import subprocess
     
 class Rec():
@@ -36,12 +36,10 @@ class Rec():
         self.ffmpeg_exe = cfg.get_cfg("main", "ffmpeg_path") + "ffmpeg.exe"
         if os.path.exists(self.ffmpeg_exe) == False:
             from imageio.plugins.ffmpeg import get_exe
-            moviepy_config.FFMPEG_BINARY = get_exe()
-            self.ffmpeg_exe = moviepy_config.FFMPEG_BINARY
+            self.ffmpeg_exe = get_exe()
         else:
-            moviepy_config.FFMPEG_BINARY = self.ffmpeg_exe
-        print(moviepy_config.FFMPEG_BINARY)
-        print(self.ffmpeg_exe)
+            moviepy_config.change_settings({"FFMPEG_BINARY":self.ffmpeg_exe})
+        self.log.log("Rec init", "will use ffmpeg: %s" %(self.ffmpeg_exe))
         self.current_video = None
         if os.path.exists(self.workarea) == False:
             os.mkdir(self.workarea)
@@ -442,6 +440,7 @@ class Rec():
         if os.name == "nt":
             popen_params["creationflags"] = 0x08000000
         proc = subprocess.Popen(cmd, **popen_params)
+        proc.wait()
         return
         
     def write_slice_video(self, frames, slice_flow, start_index):
@@ -458,6 +457,7 @@ class Rec():
                 video_clip = VideoFileClip(self.current_video)
                 video_clip = video_clip.subclip(start_time, end_time)
                 video_clip.write_videofile(slice_flow["file_name"], logger = None)
+                video_clip.close()
         return
         
     def process_frame(self, frames):
