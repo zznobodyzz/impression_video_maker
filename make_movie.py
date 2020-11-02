@@ -1,6 +1,7 @@
 import copy
 from moviepy.editor import *
 from moviepy.audio.fx import *
+import moviepy.config as moviepy_config
 from utils import *
 import cv2
 import numpy as np
