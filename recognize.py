@@ -353,8 +353,11 @@ class Rec():
             return
         if type(slice_flow) == cv2.VideoWriter:
             slice_flow.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        else:
+        elif os.path.exists(file_path) == True:
             slice_flow = cv2.VideoCapture(file_path)
+        else:
+            del self.slice_db[self.slice_path][file_path]
+            return
         #self.slice_db[self.slice_path][file_path]["express"] = self.recexp.predict_flow(slice_flow, self.slice_db[file_path]["length"])
         self.slice_db[self.slice_path][file_path]["express"] = "default"
         self.slice_db[self.slice_path][file_path]["length"] = int(slice_flow.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -458,7 +461,6 @@ class Rec():
                 video_clip.close()
                 self.fast_video_cut(self.current_video, slice_flow["file_name"], start_time, end_time)
             else:
-                video_clip = VideoFileClip(self.current_video)
                 video_clip = video_clip.subclip(start_time, end_time)
                 video_clip.write_videofile(slice_flow["file_name"], logger = None)
                 video_clip.close()
