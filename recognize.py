@@ -451,7 +451,11 @@ class Rec():
             #keep audio mode
             start_time = round(start_index / slice_flow["fps"], 2)
             end_time = round((start_index + len(frames))/ slice_flow["fps"])
+            video_clip = VideoFileClip(self.current_video)
+            if end_time > video_clip.duration:
+                return
             if self.keep_audio == "fast":
+                video_clip.close()
                 self.fast_video_cut(self.current_video, slice_flow["file_name"], start_time, end_time)
             else:
                 video_clip = VideoFileClip(self.current_video)
