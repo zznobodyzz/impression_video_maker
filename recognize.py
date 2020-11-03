@@ -456,6 +456,7 @@ class Rec():
             end_time = round((start_index + len(frames))/ slice_flow["fps"])
             video_clip = VideoFileClip(self.current_video)
             if end_time > video_clip.duration:
+                video_clip.close()
                 return
             if self.keep_audio == "fast":
                 video_clip.close()
