@@ -19,7 +19,7 @@ config.ini
   
 **********流程**********  
 (人脸识别第4-5步):  
-1.  把音乐文件放入目录[./wa/music_of_gaki/]  
+1.  把音乐文件放入目录[./wa/music_of_gakki/]  
     输入[python main.py --listen],学习这些音乐的相关属性  
     命令行参数:  
         [-rescan] 强制重新扫描目录下的所有音乐文件  
@@ -32,21 +32,21 @@ config.ini
     命令行参数:  
         [-max-pic-num <个数>] 指定一次操作最多标注多少张图片  
         [-use-slice <slice目录>] 从指定目录里面选视频素材当做图片进行标注(未完善)  
-        [-use-learn-pic] 从./wa/pic_of_gaki/目录选图片进行标注  
+        [-use-learn-pic] 从./wa/pic_of_gakki/目录选图片进行标注  
     
     
 3.  (可选)开始根据表情标注对表情进行学习  
     [python main.py --train-exp -start]  
     
     
-4.  放一些正面清晰照于目录[./wa/pic_of_gaki/]  
+4.  放一些正面清晰照于目录[./wa/pic_of_gakki/]  
     输入[python main.py --learn]  
     使用这些照片进行人脸识别的学习  
     命令行参数:  
         [-rescan] 强制重新扫描目录下的所有图片  
     
     
-5.  把视频文件放入目录[./wa/video_of_gaki/]  
+5.  把视频文件放入目录[./wa/video_of_gakki/]  
     输入[python main.py --recognize]  
     利用人脸识别进行视频裁剪,产生Gakki的片段  
     命令行参数:  
