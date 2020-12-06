@@ -280,8 +280,8 @@ def get_recognize_commands(argvs, index, length):
     #default values
     result = {"mode":"fastest", "sample-rate":1, "slice-path":''}
     if index + 1 == length:
-        log.log("get_recognize_commands", "not enough parameters")
-        return None
+        log.log("get_recognize_commands", "no parameters, will use default values")
+        return result
     argvs = argvs[index + 1:]
     if "-slice-path" in argvs:
         result["slice-path"] = get_argv(argvs, argvs.index("-slice-path"), result["slice-path"])
