@@ -8,7 +8,7 @@ class Log():
     def log(self, main_string, sub_string, level = 5):
         time_str = datetime.datetime.strftime(datetime.datetime.now(),'%Y-%m-%d %H:%M:%S')
         if self.LOG_LEVEL == 255:
-            print("[%s] [%s] %s\n" %(time_str, main_string, sub_string))
+            print("[%s] [%s] %s" %(time_str, main_string, sub_string))
         elif level < self.LOG_LEVEL and self.LOG_FILE != None:
             self.LOG_FILE.write()
             self.LOG_FILE.flush()

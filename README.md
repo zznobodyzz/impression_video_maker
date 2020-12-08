@@ -91,7 +91,7 @@ config.ini
             [-beat-rate <秒>] 保证采样的节拍点间隔大于n秒  
             [-no-repeat] 保证同一个片段不会使用超过一次  
             [-multi-mode <follow|no>] follow:根据指定的多个目录进行横向分屏对比展示视频的生成  
-            [-music-only -music-bg <文件名特征>] 用于自制的音乐  
+            [-video-only] 无声
         一般参数:  
             [-music <文件名特征>] 指定背景音乐,必须是扫描过的  
             [-time <秒>] 指定生成视频长度  

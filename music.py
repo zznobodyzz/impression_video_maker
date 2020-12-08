@@ -248,7 +248,7 @@ class Mus():
                 file = self.convert_mus_type(self.music_path+file)
                 self.mus_db[file] = dict()
                 if beat_detect_mode == "auto":
-                    if file in os.listdir(self.music_beat_path):
+                    if os.path.exists(self.music_beat_path) == True and file in os.listdir(self.music_beat_path):
                         self.log.log("check_new_mus", "found beat file, using it for beat tracking")
                         beat_file = self.music_beat_path+file
                         self.convert_mus_type(beat_file)

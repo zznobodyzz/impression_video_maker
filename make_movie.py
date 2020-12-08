@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 from painter import Painter
 import math
+import collections
 
 class Mov():
     def __init__(self, log, rec, mus, cfg):
@@ -113,14 +114,15 @@ class Mov():
             base1 = fps * (beats[i+1] - beats[i])
             base2 = int(base1)
             payback += (base1 - base2)
-        paybackf = round((len(beats) - 1)/payback, precise)
-        i = 0
-        while i < (len(beats) - 1):
-            index = round(i * paybackf)
-            if index > len(beats) - 1:
-                break
-            compensation[index] += 1
-            i += 1
+        if payback != 0:
+            paybackf = round((len(beats) - 1)/payback, precise)
+            i = 0
+            while i < (len(beats) - 1):
+                index = round(i * paybackf)
+                if index > len(beats) - 1:
+                    break
+                compensation[index] += 1
+                i += 1
         return compensation
         
     def combine_beats(self, beats, base_delta, least_beat_seconds):
@@ -269,7 +271,7 @@ class Mov():
         
     def broadcast_screen_process(self, slice_flow_list, slice_info_list, caption_height, step, video_size, beat_frame_nums):
         frame_list = []
-        width_nums = len(slice_flow_list)//4
+        width_nums = len(slice_flow_list)//6
         height_nums = len(slice_flow_list)//width_nums
         slice_width_list = [video_size[0]//width_nums]*width_nums
         slice_width_list[-1] += video_size[0]%width_nums
@@ -340,50 +342,80 @@ class Mov():
                 frame, failed_index = self.broadcast_screen_process(slice_flow_list, slice_info_list, caption_height, step, video_size, beat_frame_nums)
             return frame, failed_index
     
-    def prepare_beat_slice_flow(self, slices_list, beat_frame_nums, beat_time, already_choosen, is_failed):
+    def normalize_fps(self, slice_name):
+        self.log.log("normalize_fps", "converting fps")
+        clip = VideoFileClip(slice_name)
+        tmp_file = append_file_name(slice_name, "_fps_conv")
+        clip.write_videofile(tmp_file, fps=self.default_output_fps, codec = "libx264", logger = None)
+        clip.close()
+        return tmp_file
+    
+    def preprocess_slice_flow(self, slice_name, slice_info):
+        if slice_info["fps"] != self.default_output_fps:
+            tmp_file = self.normalize_fps(slice_name)
+            slice_flow = cv2.VideoCapture(tmp_file)
+            slice_info["fps"] = self.default_output_fps
+            slice_info["length"] = int(slice_flow.get(cv2.CAP_PROP_FRAME_COUNT))
+            slice_info["fourcc"] == int(slice_flow.get(cv2.CAP_PROP_FOURCC))
+        else:
+            tmp_file = None
+            slice_flow = cv2.VideoCapture(slice_name)
+        return tmp_file, slice_flow
+    
+    def prepare_beat_slice_flow(self, slices_list, beat_frame_nums, beat_time, output_size, already_choosen, is_failed):
         if len(slices_list) == 1:
             flow_list = []
             info_list = []
+            tmp_file_list = []
             if self.screen_effect == "broadcast" and is_failed == False:
-                pick_num = 16
+                pick_num = 48
             else:
                 pick_num = 1
             for i in range(pick_num):
                 slice_name, slice_info = self.get_slice(slices_list[0], beat_frame_nums, beat_time, already_choosen)
+                tmp_file, slice_flow = self.preprocess_slice_flow(slice_name, slice_info)
+                tmp_file_list.append(tmp_file)
                 already_choosen.append(slice_name)
-                slice_flow = cv2.VideoCapture(slice_name)
                 flow_list.append(slice_flow)
                 info_list.append(slice_info)
-            return flow_list, info_list
+            return flow_list, info_list, tmp_file_list
         else:
             flow_list = []
             info_list = []
+            tmp_file_list = []
             for slices in slices_list:
                 slice_name, slice_info = self.get_slice(slices, beat_frame_nums, beat_time, already_choosen)
+                tmp_file, slice_flow = self.preprocess_slice_flow(slice_name, slice_info)
+                tmp_file_list.append(tmp_file)
                 already_choosen.append(slice_name)
-                slice_flow = cv2.VideoCapture(slice_name)
                 flow_list.append(slice_flow)
                 info_list.append(slice_info)
-            return flow_list, info_list
+            return flow_list, info_list, tmp_file_list
     
-    def prepare_no_beat_slice_flow(self, slices_list, slice_size, already_choosen):
+    def prepare_no_beat_slice_flow(self, slices_list, already_choosen):
         flow_list = []
         info_list = []
+        tmp_file_list = []
         for slices in slices_list:
-            slice_name, slice_info = self.get_slice(slices, 0, slice_size, already_choosen)
+            slice_name, slice_info = self.get_slice(slices, 0, 0, already_choosen)
+            tmp_file, slice_flow = self.preprocess_slice_flow(slice_name, slice_info)
+            tmp_file_list.append(tmp_file)
             already_choosen.append(slice_name)
-            slice_flow = cv2.VideoCapture(slice_name)
             flow_list.append(slice_flow)
             info_list.append(slice_info)
         return flow_list, info_list
         
-    def release_slices(self, slice_flow_list):
+    def release_slices(self, slice_flow_list, tmp_file_list = []):
         for slice_flow in slice_flow_list:
             if slice_flow != None:
                 slice_flow.release()
+        for i in range(len(tmp_file_list)):
+            if tmp_file_list[i] != None:
+                os.remove(tmp_file_list[i])
+                tmp_file_list[i] = None
         
     def get_movie_slice_base_info(self, slices_list):
-        min_pixel = 3440*1920
+        min_pixel = 3440*1440
         return_info = None
         for slice_list in slices_list:
             for slices in slice_list:
@@ -393,15 +425,40 @@ class Mov():
                     return_info = slices[1]
         return return_info
         
+    def get_movie_slice_base_size(self, slices_list):
+        statistics1 = list()
+        statistics2 = list()
+        for slice_list in slices_list:
+            for slices in slice_list:
+                key = [slices[1]["width"], slices[1]["height"]]
+                if key not in statistics1:
+                    statistics1.append(key)
+                    statistics2.append(1)
+                else:
+                    statistics2[statistics1.index(key)] += 1
+        return statistics1[statistics2.index(max(statistics2))]
+        
+    def check_fps_diff(self, slices_list):
+        fps = None
+        for slice_list in slices_list:
+            for slices in slice_list:
+                if fps != None and fps != slices[1]["fps"]:
+                    return True
+                fps = slices[1]["fps"]
+        return False
+        
     def combine_slices_with_beats(self, beats, slices_list, output_file_name, time, caption_height):
         already_choosen = []
         base_slice_info = self.get_movie_slice_base_info(slices_list)
+        #real_height = int(base_slice_info["height"] * (1 - caption_height/100))
+        base_slice_info["width"] = 3440
+        real_height = 1440
         writed_frames = 0
-        real_height = int(base_slice_info["height"] * (1 - caption_height/100))
         #don't know why but necessary
         for i in range(len(beats)):
             beats[i] -= 0.3
         beats[0] = 0
+        combined_slice = collections.OrderedDict()
         output_flow = cv2.VideoWriter(output_file_name, self.default_output_fourcc, self.default_output_fps, (base_slice_info["width"],real_height))
         try:
             time_up = False
@@ -415,7 +472,7 @@ class Mov():
             slice_list_all = [slice_list_all]
             for i in range(len(beats) - 1):
                 beat_frame_nums = int(self.default_output_fps * (beats[i+1] - beats[i])) + compensation[i]
-                #add face effect on slices less than 2 seconds
+                #add face effect on beat less than 2 seconds
                 if beat_frame_nums < self.default_output_fps * 2:
                     self.face_effect = "None"#get_random_s(self.face_effect_list)
                     self.convert_effect = get_random_s(self.convert_effect_list)
@@ -423,14 +480,14 @@ class Mov():
                     slices_list = slice_list_ori
                     slice_frame_nums = beat_frame_nums
                     slice_time = beats[i+1] - beats[i]
-                #add screen effect on slices longer than 10 seconds
+                #add screen effect on beat longer than 10 seconds
                 elif beat_frame_nums > self.default_output_fps * 10:
                     self.face_effect = "None"
                     self.convert_effect = get_random_s(self.convert_effect_list)
                     self.screen_effect = get_random_s(self.screen_effect_list)
                     slices_list = slice_list_all
-                    slice_frame_nums = beat_frame_nums//3
-                    slice_time = (beats[i+1] - beats[i])//3
+                    slice_frame_nums = 0   #pick up any slices, no limit
+                    slice_time = 0         #pick up any slices, no limit
                 else:
                     self.face_effect = "None"
                     self.screen_effect = "None"
@@ -438,7 +495,8 @@ class Mov():
                     slices_list = [slice_list_ori[get_random_i(0,len(slice_list_ori)-1)]]
                     slice_frame_nums = beat_frame_nums
                     slice_time = beats[i+1] - beats[i]
-                slice_flow_list, slice_info_list = self.prepare_beat_slice_flow(slices_list, slice_frame_nums, slice_time, already_choosen, False)
+                slice_flow_list, slice_info_list, tmp_file_list = self.prepare_beat_slice_flow(slices_list, slice_frame_nums, slice_time, (base_slice_info["width"],real_height), already_choosen, False)
+                combined_slice["%.2f - %.2f: " %(beats[i], beats[i+1])] = already_choosen[-len(slice_flow_list):]
                 last_start_width_list = [0] * len(slice_flow_list)
                 last_pos_list = [(0,0)] * len(slice_flow_list)
                 cur_frame_index = 0
@@ -448,27 +506,35 @@ class Mov():
                         if cur_frame_index == 0 or self.screen_effect == "broadcast":
                             #only replace failed part
                             slice_flow_list[failed_index].release()
-                            slice_flow_failed, slice_info_failed = self.prepare_beat_slice_flow(slices_list, slice_frame_nums, slice_time, already_choosen, True)
+                            if tmp_file_list[failed_index] != None:
+                                os.remove(tmp_file_list[failed_index])
+                            slice_flow_failed, slice_info_failed, tmp_file_list_failed = self.prepare_beat_slice_flow(slices_list, slice_frame_nums, slice_time, (base_slice_info["width"],real_height), already_choosen, True)
                             slice_flow_list[failed_index] = slice_flow_failed[0]
                             slice_info_list[failed_index] = slice_info_failed[0]
+                            tmp_file_list[failed_index] = tmp_file_list_failed[0]
                         else:
-                            self.release_slices(slice_flow_list)
-                            slice_flow_list, slice_info_list = self.prepare_beat_slice_flow(slices_list, slice_frame_nums, slice_time, already_choosen, True)
+                            self.release_slices(slice_flow_list, tmp_file_list)
+                            slice_flow_list, slice_info_list, tmp_file_list = self.prepare_beat_slice_flow(slices_list, slice_frame_nums, slice_time, (base_slice_info["width"],real_height), already_choosen, True)
                         cur_frame_index = 0
                         last_start_width_list = [0] * len(slice_flow_list)
                         last_pos_list = [(0,0)] * len(slice_flow_list)
                         frame, failed_index  = self.generate_frame(beat_frame_nums, slice_flow_list, slice_info_list, last_start_width_list, last_pos_list, caption_height, cur_frame_index, (base_slice_info["width"], real_height))
-                    self.write_frame_to_flow(output_flow, frame)
+                    self.write_frame_to_flow(output_flow, frame) 
                     cur_frame_index += 1
                     writed_frames += 1
                     if writed_frames == total_length:
-                        self.release_slices(slice_flow_list)
+                        self.release_slices(slice_flow_list, tmp_file_list)
                         time_up = True
                         break
                 if time_up == True:
                     break
                 self.log.log("combine_slices_with_beats", "schedule: %d%%" %((i+1)*100//len(beats)))
             self.log.log("combine_slices_with_beats", "schedule: 100%")
+            for i in range(len(tmp_file_list)):
+                if tmp_file_list[i] != None:
+                    os.remove(tmp_file_list[i])
+            for time, slices in combined_slice.items():
+                self.log.log("combine_slices_with_beats", time + str(slices))
             output_flow.release()
             return base_slice_info["width"], real_height
         except Exception as e:
@@ -476,8 +542,8 @@ class Mov():
             traceback.print_exc()
             output_flow.release()
             exit()
-        
-    def combine_slices_without_beats(self, slices_list, slice_size, output_file_name, time, caption_height):
+    
+    def combine_slices_without_beats(self, slices_list, output_file_name, time, caption_height):
         already_choosen = []
         base_slice_info = self.get_movie_slice_base_info(slices_list)
         real_height = int(base_slice_info["height"] * (1 - caption_height/100))
@@ -485,7 +551,8 @@ class Mov():
         last_start_width_list = [0] * len(slices_list)
         output_flow = cv2.VideoWriter(output_file_name, self.default_output_fourcc, self.default_output_fps, (base_slice_info["width"],real_height))
         total_length = self.default_output_fps * time
-        slice_flow_list, slice_info_list = self.prepare_no_beat_slice_flow(slices_list, slice_size, already_choosen)
+        combined_slice = collections.OrderedDict()
+        slice_flow_list, slice_info_list = self.prepare_no_beat_slice_flow(slices_list, already_choosen, False)
         cur_frame_index = 0
         schedule = 0
         last_schedule = 0
@@ -495,6 +562,7 @@ class Mov():
             write_frame_nums = 0
             self.convert_effect = get_random_s(self.convert_effect_list)
             need_write_nums = slice_info_list[0]["length"] if (total_length - i > slice_info_list[0]["length"]) else (total_length - i)
+            combined_slice["%.2f - %.2f: " %(i / self.default_output_fps, i + slice_info_list[0]["length"] / self.default_output_fps)] = already_choosen[-len(slice_flow_list):]
             for j in range(need_write_nums):
                 frame, failed_index = self.generate_frame(need_write_nums, slice_flow_list, slice_info_list, last_start_width_list, last_pos_list, caption_height, cur_frame_index, (base_slice_info["width"], real_height))
                 if frame == []:
@@ -503,7 +571,7 @@ class Mov():
                 write_frame_nums += 1
                 cur_frame_index += 1
             self.release_slices(slice_flow_list)
-            slice_flow_list, slice_info_list = self.prepare_no_beat_slice_flow(slices_list, slice_size, already_choosen)
+            slice_flow_list, slice_info_list = self.prepare_no_beat_slice_flow(slices_list, already_choosen, False)
             cur_frame_index = 0
             i += write_frame_nums
             schedule = i*100//total_length
@@ -511,6 +579,8 @@ class Mov():
                 self.log.log("combine_slices_without_beats", "schedule: %d%%" %(schedule))
                 last_schedule = schedule
         self.log.log("combine_slices_without_beats", "schedule: 100%")
+        for time, slices in combined_slice.items():
+            self.log.log("combine_slices_with_beats", time + str(slices))
         output_flow.release()
         return base_slice_info["width"], real_height
 
@@ -538,7 +608,7 @@ class Mov():
             i += 1
         music = concatenate_audioclips(music_list)
         movie = VideoFileClip(movie_file)
-        final = movie.set_audio(music).fadein(1, (1, 1, 1)).fadeout(2, (1, 1, 1))
+        final = movie.set_audio(music)
         return final, final_file
         
     def add_lrc(self, lrc_json, movie_file, width, height):
@@ -582,17 +652,24 @@ class Mov():
         return output_tmp_file
         
     def make(self, commands, music_file_list, music_info_list, beats, slices_list):
+        if os.path.exists(self.output_movie_path) == False:
+            os.mkdir(self.output_movie_path)
         movie_file = self.output_movie_path + commands["title"] + self.default_output_suffix
         if commands["beat-mode"] == True:
             width, height = self.combine_slices_with_beats(beats, slices_list, movie_file, commands["time"], float(commands["caption-height"]))
         else:
-            width, height = self.combine_slices_without_beats(slices_list, commands["slice-size"], movie_file, commands["time"], float(commands["caption-height"]))
+            width, height = self.combine_slices_without_beats(slices_list, movie_file, commands["time"], float(commands["caption-height"]))
         if commands["lrc"] != None:
             lrc_movie_file = self.add_lrc(commands["lrc"], movie_file, width, height)
             if lrc_movie_file != movie_file:
                 os.remove(movie_file)
                 movie_file = lrc_movie_file
-        out_movie, out_movie_path = self.add_music(music_file_list, music_info_list, commands["time"], movie_file, self.output_movie_path + commands["title"])
+        if commands["video-only"] == True:
+            out_movie_path = append_file_name(movie_file, '_video-only')
+            out_movie = VideoFileClip(movie_file)
+        else:
+            out_movie, out_movie_path = self.add_music(music_file_list, music_info_list, commands["time"], movie_file, self.output_movie_path + commands["title"])
+        out_movie = out_movie.fadein(1, (1, 1, 1)).fadeout(2, (1, 1, 1))
         full_movie = []
         make_opening = False
         make_ending = False
@@ -619,14 +696,15 @@ class Mov():
                         ('_op' if make_opening == True else '') + \
                         ('_ed' if make_ending == True else '') + \
                         '.' + out_movie_path.split('.')[-1]
-        self.log.log("make", "generating final output file, please wait..")
-        final_movie.write_videofile(final_path, codec = self.default_moviepy_codec, logger = None)
+        self.log.log("make", "generating final output file, please wait...")
+        final_movie.write_videofile(final_path, codec = self.default_moviepy_codec)
         final_movie.close()
         if make_opening == True:
             os.remove(opening_file_name)
         if make_ending == True:
             os.remove(ending_file_name)
-        os.remove(movie_file)
+        if os.path.exists(movie_file):
+            os.remove(movie_file)
         self.log.log("make", "generating final output file done")
         
     def preprocess_music(self, commands, music_info):
@@ -672,10 +750,11 @@ class Mov():
             if slice_path[-1] != '/':
                 slice_path += '/'
             if slice_path not in self.rec.slice_db.keys():
-                self.log.log("preprocess_multi_slice", "folder [%s] not exists" %(slice_path))
+                self.log.log("preprocess_multi_slice", "folder [%s] not exists in database" %(slice_path))
                 return []
             express_slices = []
             face_size = commands["face-size"] / 100
+            self.log.log("preprocess_multi_slice", "collecting slices from [%s]" %(slice_path))
             for slice, slice_info in self.rec.slice_db[slice_path].items():
                 if (slice_info["express"] == commands["express"] or commands["express"] == "default") and \
                     (commands["feature"] == "" or commands["feature"] in slice) and \
@@ -695,33 +774,37 @@ class Mov():
        
     def make_aragaki_movie(self, commands):
         self.log.log("make_aragaki_movie", "your commands are:\n%s" %(print_dict(commands)))
-        music_file, music_info, total_length = self.get_music(commands["music"])
-        if music_info == []:
-            return
-        if commands["music-only"] == False:
-            if commands["all-mode"] == True:
-                commands["time"] = self.rec.get_movie_express_slices_length(commands["express"], rescan = False)
-                self.all_mode = True
-            if commands["no-repeat"] == True:
-                self.no_repeat = True
+        if commands["video-only"] == True:
             if commands["time"] == 0:
-                self.log.log("make_aragaki_movie", "movie time length using music time length")
-                commands["time"] = int(total_length)
-            beats = self.preprocess_music(commands, music_info)
-            slices_list = []
-            if commands["slice-path"] == []:
-                slices = self.preprocess_slice(commands)
-                if slices == []:
-                    return
-                slices_list = [slices]
+                total_length = self.rec.get_movie_express_slices_length(commands["express"], rescan = False)
             else:
-                slices_list = self.preprocess_multi_slice(commands)
-                if slices_list == []:
-                    return
+                total_length = commands["time"]
+            music_file, music_info = None, None
+            beats = list(range(0, total_length, commands["beat-rate"]))
         else:
-            commands["time"] = int(total_length)
-            beats = []
-            slices_list = []
+            music_file, music_info, total_length = self.get_music(commands["music"])
+            if music_info == []:
+                return
+            else:
+                if commands["all-mode"] == True:
+                    commands["time"] = self.rec.get_movie_express_slices_length(commands["express"], rescan = False)
+                    self.all_mode = True
+                if commands["no-repeat"] == True:
+                    self.no_repeat = True
+                if commands["time"] == 0:
+                    self.log.log("make_aragaki_movie", "movie time length using music time length")
+                    commands["time"] = int(total_length)
+                beats = self.preprocess_music(commands, music_info)
+        slices_list = []
+        if commands["slice-path"] == []:
+            slices = self.preprocess_slice(commands)
+            if slices == []:
+                return
+            slices_list = [slices]
+        else:
+            slices_list = self.preprocess_multi_slice(commands)
+            if slices_list == []:
+                return
         output_movie = self.make(commands, music_file, music_info, beats, slices_list)
         
     def cut_scene(self, commands):

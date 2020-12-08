@@ -77,7 +77,7 @@ def print_help():
                 "\t                          [-caption-height <n-pixel>] --- cut the n pixel of the bottom\n" \
                 "\t                          [-multi-mode <follow|no>] --- will pick up slices from multi folder, and the whole mv will split to multi parts in width\n" \
                 "\t                          [-slice-path <folder1> <folder2>...] --- will pick up slices from multi folder, and the whole mv will split to multi parts in width\n" \
-                "\t                          [-music-only -music-bg <bg.json>]"
+                "\t                          [--video-only]"
                 "\t--album-learn  ---    learn pictures for album making, must have an initialized express recognizer\n" \
                 "\t                      the params are as follows:\n" \
                 "\t                          [-folder <picture_path>]\n" \
@@ -189,7 +189,7 @@ def get_make_mv_commands(argvs, index, length):
                 "edconf":None, "express":"default", \
                 "beat-mode":False, "slice-size-range":"0-255", "beat-rate":2, "all-mode":False, \
                 "no-repeat":False, "feature":"", "lrc":None, "caption-height":0, "face-size":0, \
-                "multi-mode":"no", "slice-path":[],"music-only":False, "music-bg":None}
+                "multi-mode":"no", "slice-path":[],"video-only":False, "music-bg":None}
     if index + 1 == length:
         log.log("get_make_mv_commands", "not enough parameters")
         return None
@@ -230,10 +230,8 @@ def get_make_mv_commands(argvs, index, length):
         result["multi-mode"] = get_argv(argvs, argvs.index("-multi-mode"), result["multi-mode"])
     if "-slice-path" in argvs:
         result["slice-path"] = get_argvs(argvs, argvs.index("-slice-path"), result["slice-path"])
-    if "-music-only" in argvs:
-        result["music-only"] = True
-        if "-music-bg" in argvs:
-            result["music-bg"] = get_argv(argvs, argvs.index("-music-bg"), result["music-bg"])
+    if "-video-only" in argvs:
+        result["video-only"] = True
     return result
     
 def get_make_album_commands(argvs, index, length):
@@ -280,8 +278,8 @@ def get_recognize_commands(argvs, index, length):
     #default values
     result = {"mode":"fastest", "sample-rate":1, "slice-path":''}
     if index + 1 == length:
-        log.log("get_recognize_commands", "no parameters, will use default values")
-        return result
+        log.log("get_recognize_commands", "not enough parameters")
+        return None
     argvs = argvs[index + 1:]
     if "-slice-path" in argvs:
         result["slice-path"] = get_argv(argvs, argvs.index("-slice-path"), result["slice-path"])
@@ -346,7 +344,7 @@ def execute_slice_pocess_commands(argvs):
                 "top-cut":0, "bottom-cut":0, "left-cut":0, "right-cut":0, "slow-times":0, \
                 "slice-size-range":"0-255","slice-path":'',"scan":"info", "mode":"auto"}
     if '-slice-path' in argvs:
-        result["slice-path"] = get_argv(argvs, argvs.index("-slice-path"), result["slice-path"])
+        result["slice-path"] = get_argvs(argvs, argvs.index("-slice-path"), result["slice-path"])
     if "-feature" in argvs:
         result["feature"] = get_argv(argvs, argvs.index("-feature"), result["feature"])
     if "-scan" in argvs:
@@ -358,7 +356,8 @@ def execute_slice_pocess_commands(argvs):
         elif result["scan"] == "express":
             if "-mode" in argvs:
                 result["mode"] = get_argv(argvs, argvs.index("-mode"), result["mode"])
-            rec.sync_slice_express_info(result["slice-path"], result["mode"], result["feature"])
+            rescan = True if "-rescan" in argvs else False
+            rec.sync_slice_express_info(result["slice-path"], result["mode"], result["feature"], rescan)
         exit()
     if "-slice-size-range" in argvs:
         result["slice-size-range"] = get_argv(argvs, argvs.index("-slice-size-range"), result["slice-size-range"])

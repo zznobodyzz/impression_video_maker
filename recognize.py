@@ -10,6 +10,7 @@ from moviepy.editor import *
 from moviepy.audio.fx import *
 import moviepy.config as moviepy_config
 import subprocess
+import tkinter
     
 class Rec():
     def __init__(self, log, recexp, cfg):
@@ -29,6 +30,7 @@ class Rec():
         self.old_video_db = None
         #slice_db {slice_path: {slice_name : {express, length, height, width, fps, fourcc}}}
         self.slice_db = None
+        self.default_slice_fps = cfg.get_cfg("rec", "slice_fps")
         self.default_scene_confidence = cfg.get_cfg("rec", "default_scene_confidence")
         self.default_face_confidence = cfg.get_cfg("rec", "default_face_confidence")
         self.detect_mode = cfg.get_cfg("rec", "detect_mode")
@@ -222,98 +224,137 @@ class Rec():
                 return 0,0,0
         return face_locations[index][3], face_locations[index][1], (face_locations[index][1] - face_locations[index][3]) / video_width
         
-    def sync_slice_face_info(self, slice_path):
-        self.init_slice_database(slice_path)
-        self.recexp.load_recognizer()
-        for slice in list(self.slice_db[self.slice_path]):
-            if os.path.exists(slice) == False:
-                continue
-            self.log.log("sync_slice_face_info", "processing file [%s]" %(slice))
-            flow = cv2.VideoCapture(slice)
-            ret, frame = flow.read()
-            self.slice_db[self.slice_path][slice]["face_location_left"], \
-            self.slice_db[self.slice_path][slice]["face_location_right"], \
-            self.slice_db[self.slice_path][slice]["face_percent"] = \
-            self.detect_face_info(frame, self.slice_db[self.slice_path][slice]["width"], self.default_face_confidence)
-            flow.release()
-        self.save_slice_database()
-            
-    def sync_slice_express_info(self, slice_path, mode, feature):
-        self.init_slice_database(slice_path)
-        self.recexp.load_recognizer()
-        i = 0
-        slice_key_list = list(self.slice_db[self.slice_path])
-        i = 0
-        if feature != "":
-            for slice in slice_key_list:
-                if feature in slice:
-                    i = slice_key_list.index(slice)
-        while i < len(slice_key_list):
-            slice = slice_key_list[i]
-            if os.path.exists(slice) == False:
-                i += 1
-                continue
-            self.log.log("sync_slice_express_info", "processing file [%s]" %(slice))
-            flow = cv2.VideoCapture(slice)
-            ret, frame = flow.read()
-            if mode == "auto":
-                express = self.recexp.predict_image(frame)
-            elif mode == "manual":
-                while True:
-                    while ret == True:
-                        last_frame = frame
-                        cv2.imshow(slice, frame)
-                        key = cv2.waitKey(10)
-                        if (key & 0xff) == ord('q'):
-                            break
-                        ret, frame = flow.read()
-                    express = self.recexp.manual_mark_image(slice, last_frame)
-                    if express in ["gakki-smile","default"]:
-                        break
-                    if express == "last-slice" and i != 0:
-                        i -= 2
-                        express = "default"
-                        break
-                    if express == "again":
-                        flow.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                        ret, frame = flow.read()
-                    if express == "end":
-                        self.slice_db[self.slice_path][slice]["express"] = "default"
-                        flow.release()
-                        self.save_slice_database()
-                        exit()
-            self.log.log("sync_slice_express_info", "file [%s] is [%s]" %(slice, express))
-            self.slice_db[self.slice_path][slice]["express"] = express
-            flow.release()
-            i += 1
-        self.save_slice_database()
-        
-    def sync_slice_info(self, slice_path):
-        self.init_slice_database(slice_path)
-        self.recexp.load_recognizer()
-        current_slices = [(self.slice_path + current_slice) for current_slice in os.listdir(self.slice_path)]
-        for slice in list(self.slice_db[self.slice_path]):
-            if slice not in current_slices:
-                self.log.log("sync_slice_info", "origin file [%s] not found, delete it from database" %(slice))
-                self.slice_db[self.slice_path].pop(slice)
-        for file_path in current_slices:
-            if file_path not in self.slice_db[self.slice_path].keys():
-                self.log.log("sync_slice_info", "new file found [%s]" %(file_path))
-                flow = cv2.VideoCapture(file_path)
-                self.slice_db[self.slice_path][file_path] = dict()
-                self.slice_db[self.slice_path][file_path]["length"] = int(flow.get(cv2.CAP_PROP_FRAME_COUNT))
-                self.slice_db[self.slice_path][file_path]["width"] = int(flow.get(cv2.CAP_PROP_FRAME_WIDTH))
-                self.slice_db[self.slice_path][file_path]["height"] = int(flow.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                self.slice_db[self.slice_path][file_path]["fps"] = int(flow.get(cv2.CAP_PROP_FPS))
-                self.slice_db[self.slice_path][file_path]["fourcc"] = int(flow.get(cv2.CAP_PROP_FOURCC))
-                self.slice_db[self.slice_path][file_path]["express"] = "default"
+    def sync_slice_face_info(self, slice_paths):
+        for slice_path in slice_paths:
+            self.log.log("sync_slice_face_info", "scanning [%s]" %(slice_path))
+            self.init_slice_database(slice_path)
+            self.recexp.load_recognizer()
+            for slice in list(self.slice_db[self.slice_path]):
+                if os.path.exists(slice) == False:
+                    continue
+                self.log.log("sync_slice_face_info", "processing file [%s]" %(slice))
+                flow = cv2.VideoCapture(slice)
                 ret, frame = flow.read()
-                self.slice_db[self.slice_path][file_path]["face_percent"] = 100
+                self.slice_db[self.slice_path][slice]["face_location_left"], \
+                self.slice_db[self.slice_path][slice]["face_location_right"], \
+                self.slice_db[self.slice_path][slice]["face_percent"] = \
+                self.detect_face_info(frame, self.slice_db[self.slice_path][slice]["width"], self.default_face_confidence)
                 flow.release()
-        if len(self.slice_db[self.slice_path].keys()) == 0:
-            self.slice_db.pop(self.slice_path)
-        self.save_slice_database()
-        self.log.log("sync_slice_info", "sync_slice_info done")
+            self.save_slice_database()
+            self.slice_db = None
+            self.log.log("sync_slice_face_info", "sync_slice_face_info done")
+            
+    def sync_slice_express_info(self, slice_paths, mode, feature, rescan):
+        for slice_path in slice_paths:
+            self.log.log("sync_slice_express_info", "scanning [%s]" %(slice_path))
+            self.init_slice_database(slice_path)
+            self.recexp.load_recognizer()
+            i = 0
+            slice_key_list = list(self.slice_db[self.slice_path])
+            i = 0
+            if feature != "":
+                for slice in slice_key_list:
+                    if feature in slice:
+                        i = slice_key_list.index(slice)
+            slice_nums = len(slice_key_list)
+            while i < slice_nums:
+                need_delete = False
+                slice = slice_key_list[i]
+                if os.path.exists(slice) == False:
+                    i += 1
+                    continue
+                if rescan == False:
+                    if "scanned_express" in self.slice_db[self.slice_path][slice] and \
+                        self.slice_db[self.slice_path][slice]["scanned_express"] == 1:
+                        i += 1
+                        continue
+                self.log.log("sync_slice_express_info", "processing file [%s]" %(slice))
+                flow = cv2.VideoCapture(slice)
+                ret, frame = flow.read()
+                if mode == "auto":
+                    express = self.recexp.predict_image(frame)
+                elif mode == "manual":
+                    screen = tkinter.Tk()
+                    x = int(screen.winfo_screenwidth()/2 - frame.shape[1]/2)
+                    y = int(screen.winfo_screenheight()/2 - frame.shape[0]/2)
+                    while True:
+                        while ret == True:
+                            last_frame = frame
+                            cv2.moveWindow(slice, x, y)
+                            cv2.imshow(slice, frame)
+                            key = cv2.waitKey(10)
+                            if (key & 0xff) == ord('q'):
+                                break
+                            ret, frame = flow.read()
+                        express = self.recexp.manual_mark_image(slice, last_frame)
+                        cv2.destroyAllWindows()
+                        if express in ["gakki-smile","default"]:
+                            self.slice_db[self.slice_path][slice]["scanned_express"] = 1
+                            break
+                        elif express == "last-slice" and i != 0:
+                            self.slice_db[self.slice_path][slice_key_list[i-1]]["scanned_express"] = 0
+                            i -= 2
+                            express = "default"
+                            break
+                        elif express == "again":
+                            flow.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            ret, frame = flow.read()
+                        elif express == "del":
+                            del self.slice_db[self.slice_path][slice]
+                            need_delete = True
+                            break
+                        elif express == "end":
+                            self.slice_db[self.slice_path][slice]["express"] = "default"
+                            flow.release()
+                            self.save_slice_database()
+                            exit()
+                else:
+                    flow.release()
+                    self.save_slice_database()
+                    self.log.log("sync_slice_express_info", "unknown mode [%s]" %(mode))
+                    return
+                flow.release()
+                if need_delete == True:
+                    os.remove(slice)
+                    continue
+                self.log.log("sync_slice_express_info", "file [%s] is [%s](%d/%d)" %(slice, express, i+1, slice_nums))
+                self.slice_db[self.slice_path][slice]["express"] = express
+                self.save_slice_database()
+                i += 1
+            self.save_slice_database()
+            self.slice_db = None
+        
+    def sync_slice_info(self, slice_paths):
+        for slice_path in slice_paths:
+            self.log.log("sync_slice_info", "scanning [%s]" %(slice_path))
+            self.init_slice_database(slice_path)
+            current_slices = [(self.slice_path + current_slice) for current_slice in os.listdir(self.slice_path)]
+            for slice in list(self.slice_db[self.slice_path]):
+                if slice not in current_slices:
+                    self.log.log("sync_slice_info", "origin file [%s] not found, delete it from database" %(slice))
+                    self.slice_db[self.slice_path].pop(slice)
+            for file_path in current_slices:
+                if file_path not in self.slice_db[self.slice_path].keys():
+                    self.log.log("sync_slice_info", "new file found [%s]" %(file_path))
+                    flow = cv2.VideoCapture(file_path)
+                    self.slice_db[self.slice_path][file_path] = dict()
+                    self.slice_db[self.slice_path][file_path]["length"] = int(flow.get(cv2.CAP_PROP_FRAME_COUNT))
+                    self.slice_db[self.slice_path][file_path]["width"] = int(flow.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    self.slice_db[self.slice_path][file_path]["height"] = int(flow.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    self.slice_db[self.slice_path][file_path]["fps"] = int(flow.get(cv2.CAP_PROP_FPS))
+                    self.slice_db[self.slice_path][file_path]["fourcc"] = int(flow.get(cv2.CAP_PROP_FOURCC))
+                    self.slice_db[self.slice_path][file_path]["express"] = "default"
+                    ret, frame = flow.read()
+                    self.slice_db[self.slice_path][file_path]["face_percent"] = 100
+                    flow.release()
+                else:
+                    flow = cv2.VideoCapture(file_path)
+                    self.slice_db[self.slice_path][file_path]["length"] = int(flow.get(cv2.CAP_PROP_FRAME_COUNT))
+            if len(self.slice_db[self.slice_path].keys()) == 0:
+                self.slice_db.pop(self.slice_path)
+            self.save_slice_database()
+            self.slice_db = None
+            self.log.log("sync_slice_info", "sync_slice_info done")
         
     def open_slice_video(self, flow_file, origin_video_info, start_second, face_location):
         file_name = flow_file.split('/')[-1]
@@ -352,16 +393,22 @@ class Rec():
         if slice_flow == None:
             return
         if type(slice_flow) == cv2.VideoWriter:
-            slice_flow.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        elif os.path.exists(file_path) == True:
-            slice_flow = cv2.VideoCapture(file_path)
-        else:
+            slice_flow.release()
+        elif os.path.exists(file_path) == False:
             del self.slice_db[self.slice_path][file_path]
             return
+        slice_flow = cv2.VideoCapture(file_path)
         #self.slice_db[self.slice_path][file_path]["express"] = self.recexp.predict_flow(slice_flow, self.slice_db[file_path]["length"])
         self.slice_db[self.slice_path][file_path]["express"] = "default"
         self.slice_db[self.slice_path][file_path]["length"] = int(slice_flow.get(cv2.CAP_PROP_FRAME_COUNT))
         slice_flow.release()
+        if self.slice_db[self.slice_path][file_path]["fps"] != self.default_slice_fps:
+            slice_flow = VideoFileClip(file_path)
+            tmp_file = append_file_name(file_path, "fps_conv")
+            slice_flow.write_videofile(tmp_file, fps=self.default_slice_fps)
+            slice_flow.close()
+            os.remove(file_path)
+            os.rename(tmp_file, file_path)
         self.save_slice_database()
         
     def ahash(self, frame):
@@ -458,13 +505,21 @@ class Rec():
             if end_time > video_clip.duration:
                 video_clip.close()
                 return
-            if self.keep_audio == "fast":
-                video_clip.close()
-                self.fast_video_cut(self.current_video, slice_flow["file_name"], start_time, end_time)
-            else:
-                video_clip = video_clip.subclip(start_time, end_time)
-                video_clip.write_videofile(slice_flow["file_name"], logger = None)
-                video_clip.close()
+            try:
+                if self.keep_audio == "fast":
+                    video_clip.close()
+                    video_clip = None
+                    self.fast_video_cut(self.current_video, slice_flow["file_name"], start_time, end_time)
+                else:
+                    video_clip = video_clip.subclip(start_time, end_time)
+                    video_clip.write_videofile(slice_flow["file_name"], logger = None)
+                    video_clip.close()
+                    video_clip = None
+            except Exception as e:
+                self.log.log("write_slice_video", str(e))
+                if video_clip != None:
+                    video_clip.close()
+                return
         return
         
     def process_frame(self, frames):
@@ -859,7 +914,7 @@ class Rec():
         if commands["slice-path"] == '':
             slice_path_list = self.slice_db.keys()
         else:
-            slice_path_list = self.slice_path
+            slice_path_list = [self.slice_path]
         total_length = 0
         for path in slice_path_list:
             path_total_length = 0
@@ -868,7 +923,9 @@ class Rec():
                 print("slice-path: [%s] --- total length: [%d s]" %(path, path_total_length))
             else:
                 for info in self.slice_db[path].values():
-                    if info["express"] == express:
+                    seconds = info["length"]//info["fps"]
+                    if info["express"] == express and seconds >= int(commands["slice-size-range"].split("-")[0]) \
+                        and seconds <= int(commands["slice-size-range"].split("-")[1]):
                         path_total_length += (info["length"]//info["fps"])
                 print("slice-path: [%s] --- express[%s]: [%d s]" %(path, express, path_total_length))
             total_length += path_total_length

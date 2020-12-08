@@ -133,12 +133,14 @@ class RecExp():
         text1 = "press 1: default"
         text2 = "press 2: again"
         text3 = "press 3: last-slice"
-        text4 = "press 4: end"
-        cv2.putText(image_tmp, text0, (width//2,height//8*3), cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(image_tmp, text1, (width//2,height//8*4), cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(image_tmp, text2, (width//2,height//8*5), cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(image_tmp, text3, (width//2,height//8*6), cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(image_tmp, text4, (width//2,height//8*7), cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 255, 255), 2)
+        text4 = "press 4: delete"
+        text5 = "press 5: end"
+        cv2.putText(image_tmp, text0, (width//2,height//9*3), cv2.FONT_HERSHEY_COMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(image_tmp, text1, (width//2,height//9*4), cv2.FONT_HERSHEY_COMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(image_tmp, text2, (width//2,height//9*5), cv2.FONT_HERSHEY_COMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(image_tmp, text3, (width//2,height//9*6), cv2.FONT_HERSHEY_COMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(image_tmp, text4, (width//2,height//9*7), cv2.FONT_HERSHEY_COMPLEX, 0.6, (255, 255, 255), 2)
+        cv2.putText(image_tmp, text5, (width//2,height//9*8), cv2.FONT_HERSHEY_COMPLEX, 0.6, (255, 255, 255), 2)
         while True:
             cv2.imshow(name, image_tmp)
             k = cv2.waitKey(0)
@@ -152,6 +154,8 @@ class RecExp():
             elif k == ord('3'):
                 return "last-slice"
             elif k == ord('4'):
+                return "del"
+            elif k == ord('5'):
                 return "end"
             else:
                 continue
